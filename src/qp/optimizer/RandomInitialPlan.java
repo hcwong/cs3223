@@ -47,12 +47,6 @@ public class RandomInitialPlan {
      * prepare initial plan for the query
      **/
     public Operator prepareInitialPlan() {
-
-        if (sqlquery.isDistinct()) {
-            System.err.println("Distinct is not implemented.");
-            System.exit(1);
-        }
-
         if (sqlquery.getGroupByList().size() > 0) {
             System.err.println("GroupBy is not implemented.");
             System.exit(1);
@@ -65,7 +59,7 @@ public class RandomInitialPlan {
 
         tab_op_hash = new HashMap<>();
         createScanOp();
-        createSelectOp();
+        createSelectOp(sqlquery.isDistinct());
         if (numJoin != 0) {
             createJoinOp();
         }
@@ -119,14 +113,14 @@ public class RandomInitialPlan {
      * Create Selection Operators for each of the
      * * selection condition mentioned in Condition list
      **/
-    public void createSelectOp() {
+    public void createSelectOp(boolean isdistinct) {
         Select op1 = null;
         for (int j = 0; j < selectionlist.size(); ++j) {
             Condition cn = selectionlist.get(j);
             if (cn.getOpType() == Condition.SELECT) {
                 String tabname = cn.getLhs().getTabName();
                 Operator tempop = (Operator) tab_op_hash.get(tabname);
-                op1 = new Select(tempop, cn, OpType.SELECT);
+                op1 = new Select(tempop, cn, OpType.SELECT, isdistinct);
                 /** set the schema same as base relation **/
                 op1.setSchema(tempop.getSchema());
                 modifyHashtable(tempop, op1);

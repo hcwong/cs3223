@@ -121,4 +121,23 @@ public class Tuple implements Serializable {
         }
         return 0;
     }
+
+    // Hashing the Tuples helps us to check for distinct values
+    // Code from https://www.baeldung.com/java-hashcode
+    public int hashCode() {
+        int hash = 7;
+        for (Object elementdata : _data) {
+            if (elementdata.instanceof Integer) {
+                hash = 31 * hash + elementdata;
+            } else if (elementdata instanceof String || elementdata instanceof Float) {
+                hash = 31 * hash + elementdata.hashCode();
+            } else {
+                System.out.println("Unrecognised tuple type");
+                System.exit(1);
+                return 0;
+            }
+        }
+
+        return hash;
+    }
 }

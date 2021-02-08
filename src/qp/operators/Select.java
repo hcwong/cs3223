@@ -5,6 +5,7 @@
 package qp.operators;
 
 import qp.utils.*;
+import java.util.HashSet;
 
 public class Select extends Operator {
 
@@ -22,12 +23,21 @@ public class Select extends Operator {
     int start;       // Cursor position in the input buffer
 
     /**
+     * The following fields are custom to the Select operator
+     * and pertain to the distinct keyword
+     */
+    boolean isdistinct; // Determines if the result of the selection needs to be distinct
+    HashSet<Tuple> seentuples;
+
+    /**
      * constructor
      **/
-    public Select(Operator base, Condition con, int type) {
+    public Select(Operator base, Condition con, int type, boolean isdistinct) {
         super(type);
         this.base = base;
         this.con = con;
+        this.isdistinct = isdistinct;
+        this.seentuples = new HashSet<>();
     }
 
     public Operator getBase() {
@@ -99,8 +109,10 @@ public class Select extends Operator {
                 /** If the condition is satisfied then
                  ** this tuple is added tot he output buffer
                  **/
-                if (checkCondition(present))
+                if (checkCondition(present) && !seentuples.contains(present)) {
                     outbatch.add(present);
+                    seentuples.add(present);
+                }
             }
 
             /** Modify the cursor to the position requierd
@@ -222,7 +234,7 @@ public class Select extends Operator {
     public Object clone() {
         Operator newbase = (Operator) base.clone();
         Condition newcon = (Condition) con.clone();
-        Select newsel = new Select(newbase, newcon, optype);
+        Select newsel = new Select(newbase, newcon, optype, isdistinct);
         newsel.setSchema((Schema) newbase.getSchema().clone());
         return newsel;
     }
