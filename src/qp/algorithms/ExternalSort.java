@@ -27,7 +27,7 @@ public class ExternalSort {
         this.id = UUID.randomUUID();
     }
 
-    public void sort(String tblpath, String mdpath, int sortIndex) {
+    public String sort(String tblpath, String mdpath, int sortIndex) {
         Schema schema = null;
 
         try {
@@ -75,15 +75,19 @@ public class ExternalSort {
                 Collections.sort(outbatchTuplesList, new TupleComparator(sortIndex));
                 ObjectOutputStream outs = new ObjectOutputStream(new FileOutputStream(
                                             currentAbsPath + "/tmp/" + this.id.toString() + "-0-" + initialRunCount.toString()));
-                for (Tuple t: outbatchTuplesList) {
+                for (Tuple t: outbatchTuplesList)
                     outs.writeObject(t);
-                }
-                initialRunSize++;
+
+                initialRunCount++;
+            }
+
         }
+
+        return merge();
     }
 
-    public void merge() {
-       
+    public String merge(int initialRunCount) {
+        return "";
     }
 
     public boolean close(ObjectInputStream in) {
