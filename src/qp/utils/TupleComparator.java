@@ -1,7 +1,6 @@
 package qp.utils;
 
 import java.util.Comparator;
-import java.io.*;
 
 /**
  * Comparator to help with Tuple sorting based on a single attribute.
@@ -10,7 +9,7 @@ public class TupleComparator implements Comparator<Tuple> {
 
     private int index;
 
-    public Comparator(int index) {
+    public TupleComparator(int index) {
         this.index = index;
     }
 

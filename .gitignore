@@ -1,2 +1,5 @@
 # Ignore Java Classes produced
 classes/
+tmp/
+.idea/
+**/*.iml
