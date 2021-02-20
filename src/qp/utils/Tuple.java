@@ -4,8 +4,9 @@
 
 package qp.utils;
 
-import java.util.*;
 import java.io.*;
+import java.lang.StringBuilder;
+import java.util.*;
 
 /**
  * Tuple - a simple object which holds an ArrayList of data
@@ -120,5 +121,45 @@ public class Tuple implements Serializable {
             }
         }
         return 0;
+    }
+
+    // Hashing the Tuples helps us to check for distinct values
+    // Code from https://www.baeldung.com/java-hashcode
+    public int hashCode() {
+        int hash = 7;
+        for (Object elementdata : _data) {
+            if (elementdata instanceof Integer) {
+                hash = 31 * hash + (int) elementdata;
+            } else if (elementdata instanceof String || elementdata instanceof Float) {
+                hash = 31 * hash + elementdata.hashCode();
+            } else {
+                System.out.println("Unrecognised tuple type");
+                System.exit(1);
+                return 0;
+            }
+        }
+
+        return hash;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+
+        for (Object o: _data) {
+            if (o instanceof Integer) {
+                sb.append(Integer.toString((int) o));
+            } else if (o instanceof String) {
+                sb.append((String) o);
+            } else if (o instanceof Float) {
+                sb.append(Float.toString((Float) o));
+            } else {
+                System.out.println("Tuple toString() failed due to unsupported Tuple element type");
+            }
+            sb.append(",");
+        }
+
+        // Trim the last comma
+        return sb.substring(0, sb.length() - 1);
     }
 }
