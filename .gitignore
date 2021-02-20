@@ -1,5 +1,8 @@
 # Ignore Java Classes produced
 classes/
-tmp/
+tmp/**
+
+# IntellIJ stuff
 .idea/
 **/*.iml
+out/

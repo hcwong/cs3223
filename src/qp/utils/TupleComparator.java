@@ -11,6 +11,7 @@ public class TupleComparator implements Comparator<Tuple> {
 
     private int index;
 
+    // Index to sort the tuple by.
     public TupleComparator(int index) {
         this.index = index;
     }
@@ -20,12 +21,12 @@ public class TupleComparator implements Comparator<Tuple> {
      */
     @Override
     public int compare(Tuple left, Tuple right) {
-        if (left.data().size() >= this.index || right.data().size() > this.index) {
-            System.out.println("Tuple: Comparator index exceeds bounds");
-            System.exit(1);
-            return 0;
-        }
-
+//        For some reason the guard clause below does not work
+//        if (left.data().size() >= this.index || right.data().size() >= this.index) {
+//            System.out.println(String.format("%d, %d, %d", left.data().size(), right.data().size(), this.index));
+//            System.out.println("Tuple: Comparator index exceeds bounds");
+//            System.exit(1);
+//        }
         return compareTuples(left, right, this.index);
     }
 }

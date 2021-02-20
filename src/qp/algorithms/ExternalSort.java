@@ -2,6 +2,7 @@ package qp.algorithms;
 
 import java.io.*;
 import java.nio.file.Paths;
+import java.lang.Math;
 import java.util.*;
 
 import qp.utils.*;
@@ -21,8 +22,19 @@ public class ExternalSort {
     public String currentAbsPath;
 
     public static void main(String[] args) {
-        ExternalSort sort = new ExternalSort(1000, 10);
-        System.out.println(sort.currentAbsPath);
+        if (args.length != 3) {
+            System.out.println("usage: java qp.algorithms.ExternalSort <tblpath> <mdpath> <sortindex>");
+        }
+
+        // Testing: Do not use call anything from External Sort unless you want to manual test it
+        ExternalSort sort = new ExternalSort(100, 10);
+        try {
+            String resultFilePath = sort.sort(args[0], args[1], Integer.parseInt(args[2]));
+            System.out.println(resultFilePath);
+        } catch (IOException ioe) {
+            ioe.printStackTrace();
+            System.out.println("Caught an IO Exception when attempting external merge sort");
+        }
     }
 
     public ExternalSort(int pageSize, int numberOfBuffers) {
@@ -52,7 +64,13 @@ public class ExternalSort {
         }
 
         tupleSize = schema.getTupleSize();
-        int batchSize = pageSize / tupleSize;
+        int batchSize = (int) Math.floor(pageSize / tupleSize);
+
+        if (pageSize < tupleSize) {
+            System.out.println("Page size smaller than tuple size. Error");
+            System.exit(1);
+        }
+
         ObjectInputStream tableIns = null;
 
         // First Step: Partition files
@@ -114,7 +132,9 @@ public class ExternalSort {
         int runId = 1;
         int nextRunCount = 0;
 
+        // The outer loop runs until we only have 1 run left - ie the sorted and merged result/final run.
         while (runCount > 1) {
+            // This is for every pass of the sort-merge loop
             while (runCount > 0) {
                 List<ObjectInputStream> inputStreams = new ArrayList<>(numberOfBuffers);
                 List<Boolean> inputStreamsEof = new ArrayList<>(numberOfBuffers);
@@ -130,9 +150,11 @@ public class ExternalSort {
 
                 // Open all the input streams to the previous runs
                 for (int i = 0; i < buffersForRuns && runCount > 0; i++, runCount--) {
+                    // We need to add nextRunCount * 10, else we will always be reading the
+                    // first 10 runs of every pass
                     ObjectInputStream runInput = new ObjectInputStream(new FileInputStream(
                         String.format("%s/tmp/%s-%d-%d.tbl", currentAbsPath,
-                            this.id.toString(), runId - 1, i)));
+                            this.id.toString(), runId - 1, i + (nextRunCount * buffersForRuns))));
                     inputStreams.add(runInput);
                     inputStreamsEof.add(false);
 
@@ -169,10 +191,11 @@ public class ExternalSort {
             }
 
             runCount = nextRunCount;
+            nextRunCount = 0;
             runId++;
         }
 
-        return String.format("%s/tmp/%s-%d-0.tbl", currentAbsPath, this.id.toString(), runId);
+        return String.format("%s/tmp/%s-%d-0.tbl", currentAbsPath, this.id.toString(), runId - 1);
     }
 
     /**
@@ -181,12 +204,9 @@ public class ExternalSort {
      * @return Tuple
      * @throws EOFException
      */
-    public Tuple readTuple(ObjectInputStream ins) throws EOFException {
+    public Tuple readTuple(ObjectInputStream ins) throws IOException {
         try {
             return (Tuple) ins.readObject();
-        } catch (IOException ioe) {
-            System.err.println("scan:error reading");
-            System.exit(1);
         } catch (ClassNotFoundException ce) {
             System.out.println("class not found exception --- error in schema object file");
             System.exit(1);
