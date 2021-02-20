@@ -20,6 +20,11 @@ public class ExternalSort {
     public int tupleSize;
     public String currentAbsPath;
 
+    public static void main(String[] args) {
+        ExternalSort sort = new ExternalSort(1000, 10);
+        System.out.println(sort.currentAbsPath);
+    }
+
     public ExternalSort(int pageSize, int numberOfBuffers) {
         this.pageSize = pageSize;
         this.numberOfBuffers = numberOfBuffers;

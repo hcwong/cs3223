@@ -2,6 +2,8 @@ package qp.utils;
 
 import java.util.Comparator;
 
+import static qp.utils.Tuple.compareTuples;
+
 /**
  * Comparator to help with Tuple sorting based on a single attribute.
  */

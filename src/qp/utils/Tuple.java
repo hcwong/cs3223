@@ -127,8 +127,8 @@ public class Tuple implements Serializable {
     public int hashCode() {
         int hash = 7;
         for (Object elementdata : _data) {
-            if (elementdata.instanceof Integer) {
-                hash = 31 * hash + elementdata;
+            if (elementdata instanceof Integer) {
+                hash = 31 * hash + (int) elementdata;
             } else if (elementdata instanceof String || elementdata instanceof Float) {
                 hash = 31 * hash + elementdata.hashCode();
             } else {
