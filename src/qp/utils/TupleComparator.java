@@ -1,5 +1,6 @@
 package qp.utils;
 
+import java.util.List;
 import java.util.Comparator;
 
 import static qp.utils.Tuple.compareTuples;
@@ -9,11 +10,14 @@ import static qp.utils.Tuple.compareTuples;
  */
 public class TupleComparator implements Comparator<Tuple> {
 
-    private int index;
+    private List<Integer> indexes;
 
-    // Index to sort the tuple by.
-    public TupleComparator(int index) {
-        this.index = index;
+    /**
+     * Takes in a list of indexes. If tied on first index, use second index to tiebreak and so on.
+     * @param indexes List<Integer>
+     */
+    public TupleComparator(List<Integer> indexes) {
+       this.indexes = indexes;
     }
 
     /**
@@ -27,6 +31,12 @@ public class TupleComparator implements Comparator<Tuple> {
 //            System.out.println("Tuple: Comparator index exceeds bounds");
 //            System.exit(1);
 //        }
-        return compareTuples(left, right, this.index);
+
+        for (Integer i: indexes) {
+            int result = compareTuples(left, right, i);
+            if (result != 0)
+                return result;
+        }
+        return 0;
     }
 }
