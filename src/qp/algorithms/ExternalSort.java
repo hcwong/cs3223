@@ -209,7 +209,7 @@ public class ExternalSort {
      * @return Tuple
      * @throws EOFException
      */
-    public Tuple readTuple(ObjectInputStream ins) throws IOException {
+    public static Tuple readTuple(ObjectInputStream ins) throws IOException {
         try {
             return (Tuple) ins.readObject();
         } catch (ClassNotFoundException ce) {
