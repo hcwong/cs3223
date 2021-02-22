@@ -26,6 +26,7 @@ public class BuildIndex {
         if (args.length < 4) {
             System.out.println("Usage: java BuildIndex <tblpath> " +
                 "<tblname> <order> <key index 1> <key index 2> ...");
+            return;
         }
 
         String tblPath = args[0];
@@ -46,6 +47,7 @@ public class BuildIndex {
                     String.format("%s/indexes/%s-%s", currentAbsPath, tblName, keysString)
                 )
             );
+            outs.writeObject(index);
         } catch (IOException ioe) {
             System.out.println("Failed to write index to output file");
             System.exit(1);
@@ -72,7 +74,7 @@ public class BuildIndex {
         while (!eos) {
            try {
                // TODO: Abstract out read tuple to somewhere more appropriate.
-               Tuple tuple = (Tuple) ExternalSort.readTuple(ois);
+               Tuple tuple = ExternalSort.readTuple(ois);
                BPlusTreeKey bTreeKey = buildKey(tuple, indexKeys);
                index.insert(bTreeKey, fin.getChannel().position());
            } catch (EOFException e) {
@@ -94,14 +96,14 @@ public class BuildIndex {
     }
 
     public static BPlusTreeKey buildKey(Tuple tuple, List<Integer> indexKeys) {
-        if (indexKeys.size() != tuple.data().size()) {
+        if (indexKeys.size() > tuple.data().size()) {
             System.out.println("Error ");
+            System.exit(1);
         }
 
         List<Object> keys = new ArrayList<>();
-        for (Integer i: indexKeys) {
+        for (Integer i: indexKeys)
             keys.add(tuple.data().get(i));
-        }
 
         return new BPlusTreeKey(keys);
     }

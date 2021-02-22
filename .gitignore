@@ -1,8 +1,13 @@
 # Ignore Java Classes produced
 classes/
-tmp/**
 
 # IntellIJ stuff
 .idea/
 **/*.iml
 out/
+
+# Indexes
+indexes/
+
+# Tmp disk files
+tmp/**

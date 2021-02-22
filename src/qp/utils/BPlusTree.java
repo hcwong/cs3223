@@ -1,5 +1,6 @@
 package qp.utils;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -14,7 +15,7 @@ import java.util.Queue;
  * https://github.com/jiaguofang/b-plus-tree/blob/master/src/main/java/com/jgfanng/algo/BPlusTree.java
  * Credit goes to him
  */
-public class BPlusTree<K extends Comparable<? super K>, V> {
+public class BPlusTree<K extends Comparable<? super K>, V> implements Serializable {
 
     public static enum RangePolicy {
         EXCLUSIVE, INCLUSIVE
@@ -144,7 +145,7 @@ public class BPlusTree<K extends Comparable<? super K>, V> {
         return sb.toString();
     }
 
-    private abstract class Node {
+    private abstract class Node implements Serializable {
         List<K> keys;
 
         int keyNumber() {

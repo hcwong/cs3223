@@ -1,12 +1,13 @@
 package qp.utils;
 
+import java.io.Serializable;
 import java.util.List;
 
 /**
  * This class is the key for the B+ Tree.
  * It contains a list of indexes
  */
-public class BPlusTreeKey implements Comparable<BPlusTreeKey> {
+public class BPlusTreeKey implements Comparable<BPlusTreeKey>, Serializable {
     List<Object> indexes;
 
     public BPlusTreeKey(List<Object> indexes) {
