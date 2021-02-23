@@ -14,13 +14,15 @@ import java.util.stream.Collectors;
 import qp.algorithms.ExternalSort;
 import qp.utils.BPlusTree;
 import qp.utils.BPlusTreeKey;
+import qp.utils.Schema;
 import qp.utils.Tuple;
 
 /**
  * BuildIndex allows us to build an index from a .tbl file
  * The index generated will be a B+ Tree index
  * In our DB we assume that the indexes can all be loaded into memory (in-memory)
- * Our leaf nodes store the keys and the values are the offset of the tuple from the file head.
+ * Our leaf nodes store the keys and the values are the offset of the page
+ * the tuple is in from the file head.
  */
 public class BuildIndex {
     public static void main(String[] args) {
@@ -60,15 +62,22 @@ public class BuildIndex {
     public static BPlusTree<BPlusTreeKey, Long> build(
         int order, String tblPath, List<Integer> indexKeys, int pageSize, int numberOfBuffers
     ) {
+        int tupleSize = 0;
         String sortedTblPath = "";
         // First sort the tbl so that we can get a clustered index.
         // We assume the .md file and the .tbl file are in the same directory.
         try {
             String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
+            ObjectInputStream schemaIns = new ObjectInputStream(new FileInputStream(mdPath));
+            Schema schema = (Schema) schemaIns.readObject();
+            tupleSize = schema.getTupleSize();
             ExternalSort sort = new ExternalSort(pageSize, numberOfBuffers);
             sortedTblPath = sort.sort(tblPath, mdPath, indexKeys);
         } catch (IOException ioe) {
             System.out.println("Failed to sort the tbl file in preparation for indexing");
+            System.exit(1);
+        } catch (ClassNotFoundException ce) {
+            System.out.println("Cannot read schema");
             System.exit(1);
         }
 
@@ -82,18 +91,36 @@ public class BuildIndex {
             System.exit(1);
         }
 
+        int batchSize = (int) Math.floor(pageSize / tupleSize);
+        assert(batchSize > 2);
+
         boolean eos = false;
-        // TODO: Calculate the key size based on the page size and key size and pointer size
+        long offsetPosition = 0;
         BPlusTree<BPlusTreeKey, Long> index = new BPlusTree<>(order);
+        List<BPlusTreeKey> keysSeen = new ArrayList<>();
 
         while (!eos) {
            try {
-               // TODO: Abstract out read tuple to somewhere more appropriate.
-               Tuple tuple = ExternalSort.readTuple(ois);
-               BPlusTreeKey bTreeKey = buildKey(tuple, indexKeys);
-               index.insert(bTreeKey, fin.getChannel().position());
+               // We read in the file page by page. The value of each leaf node
+               // pointer is the offset of the page from the head of the .tbl file
+               offsetPosition = fin.getChannel().position();
+               for (int i = 0; i < batchSize; i++) {
+                   // TODO: Abstract out read tuple to somewhere more appropriate.
+                   Tuple tuple = ExternalSort.readTuple(ois);
+                   keysSeen.add(buildKey(tuple, indexKeys));
+               }
+
+               // Note that the same offset position is used for every tuple in the page
+               for (BPlusTreeKey key: keysSeen) {
+                   index.insert(key, offsetPosition);
+               }
            } catch (EOFException e) {
                eos = true;
+               if (!keysSeen.isEmpty()) {
+                   for (BPlusTreeKey key: keysSeen) {
+                       index.insert(key, offsetPosition);
+                   }
+               }
            } catch (IOException ioe) {
                System.out.println("IO Exception when reading tuples");
                System.exit(1);
