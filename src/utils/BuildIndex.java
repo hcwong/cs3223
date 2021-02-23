@@ -20,25 +20,28 @@ import qp.utils.Tuple;
  * BuildIndex allows us to build an index from a .tbl file
  * The index generated will be a B+ Tree index
  * In our DB we assume that the indexes can all be loaded into memory (in-memory)
+ * Our leaf nodes store the keys and the values are the offset of the tuple from the file head.
  */
 public class BuildIndex {
     public static void main(String[] args) {
-        if (args.length < 4) {
+        if (args.length < 6) {
             System.out.println("Usage: java BuildIndex <tblpath> " +
-                "<tblname> <order> <key index 1> <key index 2> ...");
+                "<tblname> <order> <pageSize> <numberOfBuffers> <key index 1> <key index 2> ...");
             return;
         }
 
         String tblPath = args[0];
         String tblName = args[1]; // In case the tblpath is not in the same directory as cwd.
         int order = Integer.parseInt(args[2]);
+        int pageSize = Integer.parseInt(args[3]);
+        int numberOfBuffers = Integer.parseInt(args[4]);
         List<Integer> indexKeys = new ArrayList<>();
-        for (int i = 3; i < args.length; i++)
+        for (int i = 5; i < args.length; i++)
             indexKeys.add(Integer.parseInt(args[i]));
 
         // Save all files in the a folder called indexes at project root
         String currentAbsPath = Paths.get("").toAbsolutePath().toString();
-        BPlusTree<BPlusTreeKey, Long> index = build(order, tblPath, indexKeys);
+        BPlusTree<BPlusTreeKey, Long> index = build(order, tblPath, indexKeys, pageSize, numberOfBuffers);
         String keysString = indexKeys.stream().map((i) -> Integer.toString(i))
             .collect(Collectors.joining("-"));
         try {
@@ -55,12 +58,24 @@ public class BuildIndex {
     }
 
     public static BPlusTree<BPlusTreeKey, Long> build(
-        int order, String tblPath, List<Integer> indexKeys
+        int order, String tblPath, List<Integer> indexKeys, int pageSize, int numberOfBuffers
     ) {
+        String sortedTblPath = "";
+        // First sort the tbl so that we can get a clustered index.
+        // We assume the .md file and the .tbl file are in the same directory.
+        try {
+            String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
+            ExternalSort sort = new ExternalSort(pageSize, numberOfBuffers);
+            sortedTblPath = sort.sort(tblPath, mdPath, indexKeys);
+        } catch (IOException ioe) {
+            System.out.println("Failed to sort the tbl file in preparation for indexing");
+            System.exit(1);
+        }
+
         FileInputStream fin = null;
         ObjectInputStream ois = null;
         try {
-            fin = new FileInputStream(tblPath);
+            fin = new FileInputStream(sortedTblPath);
             ois = new ObjectInputStream(fin);
         } catch (IOException ioe) {
             System.out.println("IO Exception reading file");
