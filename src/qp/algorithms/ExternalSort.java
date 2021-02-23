@@ -22,14 +22,18 @@ public class ExternalSort {
     public String currentAbsPath;
 
     public static void main(String[] args) {
-        if (args.length != 3) {
+        if (args.length < 3) {
             System.out.println("usage: java qp.algorithms.ExternalSort <tblpath> <mdpath> <sortindex>");
         }
 
         // Testing: Do not use call anything from External Sort unless you want to manual test it
         ExternalSort sort = new ExternalSort(100, 10);
+        List<Integer> indexes = new ArrayList<>();
+        for (int i = 2; i < args.length; i++)
+            indexes.add(Integer.parseInt(args[i]));
+
         try {
-            String resultFilePath = sort.sort(args[0], args[1], Integer.parseInt(args[2]));
+            String resultFilePath = sort.sort(args[0], args[1], indexes);
             System.out.println(resultFilePath);
         } catch (IOException ioe) {
             ioe.printStackTrace();
@@ -48,11 +52,12 @@ public class ExternalSort {
      * Returns a string which represents absolute path to merged file.
      * @param tblpath String
      * @param mdpath String
-     * @param sortIndex int
+     * @param indexes List<Integer>
      * @return String
      * @throws IOException
      */
-    public String sort(String tblpath, String mdpath, int sortIndex) throws IOException {
+    public String sort(String tblpath, String mdpath, List<Integer> indexes)
+        throws IOException {
         Schema schema = null;
 
         try {
@@ -99,7 +104,7 @@ public class ExternalSort {
 
             // If there are tuples in the list, sort and write it to disk
             if (!outbatchTuplesList.isEmpty()) {
-                Collections.sort(outbatchTuplesList, new TupleComparator(sortIndex));
+                Collections.sort(outbatchTuplesList, new TupleComparator(indexes));
                 ObjectOutputStream outs =
                     new ObjectOutputStream(new FileOutputStream(
                                             currentAbsPath + "/tmp/" + this.id.toString()
@@ -116,17 +121,17 @@ public class ExternalSort {
         if (initialRunCount == 1)
             return currentAbsPath + "/tmp/" + this.id.toString() + "-0-0.tbl";
 
-        return merge(initialRunCount, sortIndex);
+        return merge(initialRunCount, indexes);
     }
 
     /**
      * Returns a string which represents the absolute path to the merged file.
      * @param initialRunCount int
-     * @param sortIndex int
+     * @param indexes
      * @return String
      * @throws IOException
      */
-    public String merge(int initialRunCount, int sortIndex) throws IOException {
+    public String merge(int initialRunCount, List<Integer> indexes) throws IOException {
         int runCount = initialRunCount;
         int buffersForRuns = numberOfBuffers - 1;
         int runId = 1;
@@ -140,7 +145,7 @@ public class ExternalSort {
                 List<Boolean> inputStreamsEof = new ArrayList<>(numberOfBuffers);
                 // Using a priority queue will help reduce the k-way merge runtime
                 PriorityQueue<Tuple> pq =
-                    new PriorityQueue<>(buffersForRuns, new TupleComparator(sortIndex));
+                    new PriorityQueue<>(buffersForRuns, new TupleComparator(indexes));
                 HashMap<Tuple, Integer> tupleMap = new HashMap<>();
                 ObjectOutputStream outs =
                     new ObjectOutputStream(new FileOutputStream(
@@ -204,7 +209,7 @@ public class ExternalSort {
      * @return Tuple
      * @throws EOFException
      */
-    public Tuple readTuple(ObjectInputStream ins) throws IOException {
+    public static Tuple readTuple(ObjectInputStream ins) throws IOException {
         try {
             return (Tuple) ins.readObject();
         } catch (ClassNotFoundException ce) {
