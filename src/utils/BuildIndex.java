@@ -21,8 +21,12 @@ import qp.utils.Tuple;
  * BuildIndex allows us to build an index from a .tbl file
  * The index generated will be a B+ Tree index
  * In our DB we assume that the indexes can all be loaded into memory (in-memory)
+<<<<<<< HEAD
  * Our leaf nodes store the keys and the values are the offset of the page
  * the tuple is in from the file head.
+=======
+ * Our leaf nodes store the keys and the values are the offset of the tuple from the file head.
+>>>>>>> Sort table file first before indexing it
  */
 public class BuildIndex {
     public static void main(String[] args) {
