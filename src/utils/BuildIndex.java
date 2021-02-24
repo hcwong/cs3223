@@ -112,7 +112,11 @@ public class BuildIndex {
 
                // Note that the same offset position is used for every tuple in the page
                for (BPlusTreeKey key: keysSeen) {
-                   index.insert(key, offsetPosition);
+                   // This check is important. Else if the key already exists,
+                   // such as in a case where a key is spread across two blocks
+                   // we will overwrite the original offset value
+                   if (index.search(key) != null)
+                       index.insert(key, offsetPosition);
                }
            } catch (EOFException e) {
                eos = true;

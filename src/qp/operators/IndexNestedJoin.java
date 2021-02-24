@@ -131,74 +131,42 @@ public class IndexNestedJoin extends Join {
             return null;
         }
         outbatch = new Batch(batchsize);
-        while (!outbatch.isFull()) {
-            if (ocurs == 0 && eosi == true) {
-                /** new left page is to be fetched**/
-                outerBatch = (Batch) left.next();
-                if (outerBatch == null) {
-                    eoso = true;
-                    return outbatch;
+        while (!eoso) {
+            if (ocurs == 0 && eosi) {
+                // Fetch all the outer buffers one can possibly fetch
+                while (!outerBatch.isFull()) {
+                    Batch nextBatch = outer.next();
+                    if (nextBatch == null) {
+                        eoso = true;
+                        break;
+                    }
+                    outerBatch.addBatch(nextBatch);
                 }
+
+//                if (outerBatch == null) {
+//                    eoso = true;
+//                    return outbatch;
+//                }
+
                 /** Whenever a new left page came, we have to start the
                  ** scanning of right table
                  **/
-                try {
-                    in = new ObjectInputStream(new FileInputStream(rfname));
-                    eosi = false;
-                } catch (IOException io) {
-                    System.err.println("NestedJoin:error in reading the file");
-                    System.exit(1);
-                }
+//                try {
+//                    in = new ObjectInputStream(new FileInputStream(rfname));
+//                    eosi = false;
+//                } catch (IOException io) {
+//                    System.err.println("NestedJoin:error in reading the file");
+//                    System.exit(1);
+//                }
 
             }
-            while (eosi == false) {
-                try {
-                    if (icurs == 0 && ocurs == 0) {
-                        innerBatch = (Batch) in.readObject();
-                    }
-                    for (i = ocurs; i < outerBatch.size(); ++i) {
-                        for (j = icurs; j < innerBatch.size(); ++j) {
-                            Tuple lefttuple = outerBatch.get(i);
-                            Tuple righttuple = innerBatch.get(j);
-                            if (lefttuple.checkJoin(righttuple, leftindex, rightindex)) {
-                                Tuple outtuple = lefttuple.joinWith(righttuple);
-                                outbatch.add(outtuple);
-                                if (outbatch.isFull()) {
-                                    if (i == outerBatch.size() - 1 && j == innerBatch.size() - 1) {  //case 1
-                                        ocurs = 0;
-                                        icurs = 0;
-                                    } else if (i != outerBatch.size() - 1 && j == innerBatch.size() - 1) {  //case 2
-                                        ocurs = i + 1;
-                                        icurs = 0;
-                                    } else if (i == outerBatch.size() - 1 && j != innerBatch.size() - 1) {  //case 3
-                                        ocurs = i;
-                                        icurs = j + 1;
-                                    } else {
-                                        ocurs = i;
-                                        icurs = j + 1;
-                                    }
-                                    return outbatch;
-                                }
-                            }
-                        }
-                        icurs = 0;
-                    }
-                    ocurs = 0;
-                } catch (EOFException e) {
-                    try {
-                        in.close();
-                    } catch (IOException io) {
-                        System.out.println("NestedJoin: Error in reading temporary file");
-                    }
-                    eosi = true;
-                } catch (ClassNotFoundException c) {
-                    System.out.println("NestedJoin: Error in deserialising temporary file ");
-                    System.exit(1);
-                } catch (IOException io) {
-                    System.out.println("NestedJoin: Error in reading temporary file");
-                    System.exit(1);
-                }
-            }
+            // TODO: Depending on the condition expr type, we use a different function
+            // Need to write 3 functions
+            // The first is the index nested join
+            // The second is the special case if it is a range query (might be able to merge)
+            // The third is just a generic block nested join
+
+            // For index nested join, we must load the pages one by one from the
         }
         return outbatch;
     }
