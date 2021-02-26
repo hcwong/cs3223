@@ -40,7 +40,7 @@ public class IndexNestedJoin extends Join {
     Operator inner;                 // Which operator is the inner or outer loop
     private int conditionExprType;  // Type of condition expr
     private BPlusTree<BPlusTreeKey, Long> index;   // Index
-    private Condition conditionUsedForIndex;       // The condition which is used to search the index
+    private int conditionUsedForIndex;
 
     public IndexNestedJoin(Join jn) {
         super(jn.getLeft(), jn.getRight(), jn.getConditionList(), jn.getOpType());
@@ -131,44 +131,106 @@ public class IndexNestedJoin extends Join {
             return null;
         }
         outbatch = new Batch(batchsize);
+        return indexJoin(outbatch);
+    }
+
+    /**
+     * This function performs the indexJoin in order to return an outbatch
+     * @param outbatch
+     * @return Batch
+     */
+    private Batch indexJoin(Batch outbatch) {
+        // We iterate until the end of the outer file
         while (!eoso) {
-            if (ocurs == 0 && eosi) {
-                // Fetch all the outer buffers one can possibly fetch
-                while (!outerBatch.isFull()) {
-                    Batch nextBatch = outer.next();
-                    if (nextBatch == null) {
-                        eoso = true;
-                        break;
-                    }
-                    outerBatch.addBatch(nextBatch);
+            while (!outerBatch.isFull()) {
+                Batch nextBatch = outer.next();
+                if (nextBatch == null) {
+                    eoso = true;
+                    break;
+                }
+                outerBatch.addBatch(nextBatch);
+            }
+
+            // Need to use indexes here
+            for (; ocurs < outerBatch.size(); ocurs++) {
+                Tuple outerTuple = outerBatch.get(ocurs);
+                ArrayList<Tuple> matchingTuples = getMatchOnEquality(outerTuple);
+
+                // Matching tuple not found
+                if (matchingTuples == null) {
+                    continue;
                 }
 
-//                if (outerBatch == null) {
-//                    eoso = true;
-//                    return outbatch;
-//                }
+                for (Tuple innerTuple: matchingTuples) {
+                    if (outerTuple.checkJoin(innerTuple, innerindex, outerindex)) {
+                        outbatch.add(outerTuple.joinWith(innerTuple));
+                    }
 
-                /** Whenever a new left page came, we have to start the
-                 ** scanning of right table
-                 **/
-//                try {
-//                    in = new ObjectInputStream(new FileInputStream(rfname));
-//                    eosi = false;
-//                } catch (IOException io) {
-//                    System.err.println("NestedJoin:error in reading the file");
-//                    System.exit(1);
-//                }
-
+                    if (outbatch.isFull()) {
+                        return outbatch;
+                    }
+                }
             }
-            // TODO: Depending on the condition expr type, we use a different function
-            // Need to write 3 functions
-            // The first is the index nested join
-            // The second is the special case if it is a range query (might be able to merge)
-            // The third is just a generic block nested join
 
-            // For index nested join, we must load the pages one by one from the
+            if (eoso) {
+                return outbatch;
+            }
+
+            // Clear the outerbatch because at this point we would have iterated through all the data
+            outerBatch.clear();
+            ocurs = 0;
         }
-        return outbatch;
+
+        return null;
+    }
+
+    private ArrayList<Tuple> getMatchOnEquality(Tuple outerTuple) {
+        // Attribute used for sorting
+        List<Object> keyValues = new ArrayList<>();
+        keyValues.add(outerTuple.dataAt(conditionUsedForIndex));
+        BPlusTreeKey key = new BPlusTreeKey(keyValues);
+        Long offset = index.search(key);
+
+        if (offset == null)
+            return null;
+
+        ArrayList<Tuple> innerTuplesToJoin = new ArrayList<>();
+
+        try {
+            FileInputStream fins = new FileInputStream(getRfName());
+            while (offset > 0) {
+                long skipped = fins.skip(offset);
+                offset -= skipped;
+            }
+            ObjectInputStream ins = new ObjectInputStream(fins);
+            int innerTupleIndex = outerindex.indexOf(conditionUsedForIndex);
+
+            // First find the first instance of the matching tuple
+            Tuple innerTuple = (Tuple) ins.readObject();
+            while (innerTuple.dataAt(innerTupleIndex) != outerTuple.dataAt(conditionUsedForIndex)) {
+                innerTuple = (Tuple) ins.readObject();
+            }
+            innerTuplesToJoin.add(innerTuple);
+            innerTuple = (Tuple) ins.readObject();
+
+            // Get the rest of the matching tuples
+            while (innerTuple.dataAt(innerTupleIndex) == outerTuple.dataAt(conditionUsedForIndex)) {
+                innerTuplesToJoin.add(innerTuple);
+                innerTuple = (Tuple) ins.readObject();
+            }
+
+            ins.close();
+            fins.close();
+
+            return innerTuplesToJoin;
+        } catch (IOException ioe) {
+            System.out.println("Failed to get the index file");
+            System.exit(1);
+        } catch (ClassNotFoundException ce) {
+            System.exit(1);
+        }
+
+        return null;
     }
 
     /**
@@ -198,6 +260,7 @@ public class IndexNestedJoin extends Join {
 
         // Set the inner and outer schema in the loop
         if (rightMap.isEmpty() && leftMap.isEmpty()) {
+            // TODO: Default back to normal join?
             System.out.println("Can't index join with no indexes available");
             System.exit(1);
         } else if (leftMap.isEmpty()) {
@@ -207,7 +270,7 @@ public class IndexNestedJoin extends Join {
             indexPath = rightMap.get(indexAttr);
             for (Condition cond: conditionList) {
                 if (cond.getRhs().equals(indexAttr)) {
-                    conditionUsedForIndex = cond;
+                    conditionUsedForIndex = right.getSchema().indexOf(indexAttr);
                     break;
                 }
             }
@@ -218,7 +281,7 @@ public class IndexNestedJoin extends Join {
             indexPath = leftMap.get(indexAttr);
             for (Condition cond: conditionList) {
                 if (cond.getLhs().equals(indexAttr)) {
-                    conditionUsedForIndex = cond;
+                    conditionUsedForIndex = left.getSchema().indexOf(indexAttr);
                     break;
                 }
             }
@@ -251,7 +314,8 @@ public class IndexNestedJoin extends Join {
         File indexesDir = new File(cwd + "/indexes");
 
         for (String filename: indexesDir.list()) {
-            if (filename.startsWith
+            // Due to the way the BPlusTree key works, we can only match to the exact index
+            if (filename.equals
                 (String.format("%s-%s", attr.getTabName(), attr.getColName()))
             )
                 return filename;
