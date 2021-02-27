@@ -63,6 +63,10 @@ public class IndexNestedJoin extends Join {
         int tuplesize = schema.getTupleSize();
         batchsize = Batch.getPageSize() / tuplesize;
 
+        // Make left batch the size of the number of buffers available for join operator - 2
+        // -2 because we do not count the buffer for the inner file and the output buffer
+        outerBatch = new Batch(batchsize * (BufferManager.getBuffersPerJoin() - 2));
+
         /** find indices attributes of join conditions **/
         ArrayList<Integer> leftindex = new ArrayList<>();
         ArrayList<Integer> rightindex = new ArrayList<>();
@@ -95,8 +99,8 @@ public class IndexNestedJoin extends Join {
         /** Right hand side table is to be materialized
          ** for the Nested join to perform
          **/
-        if (!right.open()) {
-            return false;
+        if (right.open()) {
+            return true;
         } else {
             /** If the right operator is not a base table then
              ** Materialize the intermediate result from right
@@ -174,7 +178,10 @@ public class IndexNestedJoin extends Join {
 
                 for (Tuple innerTuple: matchingTuples) {
                     if (outerTuple.checkJoin(innerTuple, innerindex, outerindex)) {
-                        outbatch.add(outerTuple.joinWith(innerTuple));
+                        if (inner == left) {
+                            outbatch.add(innerTuple.joinWith(outerTuple));
+                        } else
+                            outbatch.add(outerTuple.joinWith(innerTuple));
                     }
 
                     if (outbatch.isFull()) {
@@ -197,8 +204,9 @@ public class IndexNestedJoin extends Join {
 
     private ArrayList<Tuple> getMatchOnEquality(Tuple outerTuple) {
         // Attribute used for sorting
+        int outerTupleIndex = outerindex.get(innerindex.indexOf(conditionUsedForIndex));
         List<Object> keyValues = new ArrayList<>();
-        keyValues.add(outerTuple.dataAt(conditionUsedForIndex));
+        keyValues.add(outerTuple.dataAt(outerTupleIndex));
         BPlusTreeKey key = new BPlusTreeKey(keyValues);
         Long offset = index.search(key);
 
@@ -208,26 +216,24 @@ public class IndexNestedJoin extends Join {
         ArrayList<Tuple> innerTuplesToJoin = new ArrayList<>();
 
         try {
-            int innerTupleIndex = innerindex.get(outerindex.indexOf(conditionUsedForIndex));
             // NOTE: Assumes that cwd is in same directory as table
             FileInputStream fins = new FileInputStream(
-                inner.getSchema().getAttribute(innerTupleIndex).getTabName() + ".tbl");
-            while (offset > 0) {
-                long skipped = fins.skip(offset);
-                offset -= skipped;
-            }
+                inner.getSchema().getAttribute(outerTupleIndex).getTabName() + ".tbl");
             ObjectInputStream ins = new ObjectInputStream(fins);
+
+            // TODO: Figure out the reading from the index
+            int offsetInt = Math.toIntExact(offset);
 
             // First find the first instance of the matching tuple
             Tuple innerTuple = (Tuple) ins.readObject();
-            while (innerTuple.dataAt(innerTupleIndex) != outerTuple.dataAt(conditionUsedForIndex)) {
+            while (!innerTuple.dataAt(conditionUsedForIndex).equals(outerTuple.dataAt(outerTupleIndex))) {
                 innerTuple = (Tuple) ins.readObject();
             }
             innerTuplesToJoin.add(innerTuple);
             innerTuple = (Tuple) ins.readObject();
 
             // Get the rest of the matching tuples
-            while (innerTuple.dataAt(innerTupleIndex) == outerTuple.dataAt(conditionUsedForIndex)) {
+            while (innerTuple.dataAt(conditionUsedForIndex).equals(outerTuple.dataAt(outerTupleIndex))) {
                 innerTuplesToJoin.add(innerTuple);
                 innerTuple = (Tuple) ins.readObject();
             }
@@ -236,7 +242,10 @@ public class IndexNestedJoin extends Join {
             fins.close();
 
             return innerTuplesToJoin;
+        } catch (EOFException eof) {
+            return innerTuplesToJoin;
         } catch (IOException ioe) {
+            ioe.printStackTrace();
             System.out.println("Failed to get the index file");
             System.exit(1);
         } catch (ClassNotFoundException ce) {
@@ -248,6 +257,7 @@ public class IndexNestedJoin extends Join {
 
     /**
      * Setup the operator for an index nexted join
+     * We read in the index if it exists and check for a condition we can do the index nested join on
      */
     private void setup() {
         List<Attribute> leftConditions = new ArrayList<>();
@@ -313,10 +323,6 @@ public class IndexNestedJoin extends Join {
             System.out.println("Class not found in index nested join");
             System.exit(1);
         }
-
-        // Make left batch the size of the number of buffers available for join operator - 2
-        // -2 because we do not count the buffer for the inner file and the output buffer
-        outerBatch = new Batch(batchsize * (BufferManager.getBuffersPerJoin() - 2));
     }
 
     /**
@@ -325,15 +331,15 @@ public class IndexNestedJoin extends Join {
      * @return empty string if no index is found, else returns an absolute path to the file.
      */
     private static String getIndexIfExists(Attribute attr) {
-        String cwd = Paths.get("").getParent().toAbsolutePath().toString();
-        File indexesDir = new File(cwd + "/indexes");
+        String cwd = Paths.get("").toAbsolutePath().getParent().toString();
+        File indexesDir = new File(cwd + "/indexes/");
 
         for (String filename: indexesDir.list()) {
             // Due to the way the BPlusTree key works, we can only match to the exact index
             if (filename.equals
                 (String.format("%s-%s", attr.getTabName(), attr.getColName()))
             )
-                return filename;
+                return String.format("%s/indexes/%s-%s", cwd, attr.getTabName(), attr.getColName());
         }
 
         return "";
@@ -361,7 +367,7 @@ public class IndexNestedJoin extends Join {
      * @return absolute file to Rf
      */
     private String getRfName() {
-        return Paths.get("").getParent().toString()
+        return Paths.get("").toAbsolutePath().getParent().toString()
             + "/tmp/right-" +  uuid.toString();
     }
 }
