@@ -43,41 +43,44 @@ public class BuildIndex {
 
         // Save all files in the a folder called indexes at project root
         String currentAbsPath = Paths.get("").toAbsolutePath().toString();
-        BPlusTree<BPlusTreeKey, Long> index = build(order, tblPath, indexKeys, pageSize, numberOfBuffers);
-        String keysString = indexKeys.stream().map((i) -> Integer.toString(i))
-            .collect(Collectors.joining("-"));
         try {
+            String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
+            ObjectInputStream schemaIns = new ObjectInputStream(new FileInputStream(mdPath));
+            Schema schema = (Schema) schemaIns.readObject();
+            int tupleSize = schema.getTupleSize();
+            BPlusTree<BPlusTreeKey, Long> index = build(
+                order, tblPath, indexKeys, pageSize, numberOfBuffers, mdPath, tupleSize);
+            String keysString = indexKeys.stream().map(idx -> schema.getAttribute(idx).getColName())
+                .collect(Collectors.joining("-"));
             ObjectOutputStream outs = new ObjectOutputStream(
                 new FileOutputStream(
                     String.format("%s/indexes/%s-%s", currentAbsPath, tblName, keysString)
                 )
             );
             outs.writeObject(index);
+            outs.close();
         } catch (IOException ioe) {
             System.out.println("Failed to write index to output file");
+            System.exit(1);
+        } catch (ClassNotFoundException ce) {
+            System.out.println("Cannot read schema");
             System.exit(1);
         }
     }
 
     public static BPlusTree<BPlusTreeKey, Long> build(
-        int order, String tblPath, List<Integer> indexKeys, int pageSize, int numberOfBuffers
+        int order, String tblPath, List<Integer> indexKeys,
+        int pageSize, int numberOfBuffers, String mdPath, int tupleSize
     ) {
-        int tupleSize = 0;
         String sortedTblPath = "";
         // First sort the tbl so that we can get a clustered index.
         // We assume the .md file and the .tbl file are in the same directory.
         try {
-            String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
-            ObjectInputStream schemaIns = new ObjectInputStream(new FileInputStream(mdPath));
-            Schema schema = (Schema) schemaIns.readObject();
-            tupleSize = schema.getTupleSize();
             ExternalSort sort = new ExternalSort(pageSize, numberOfBuffers);
+            // Generates the sorted table
             sortedTblPath = sort.sort(tblPath, mdPath, indexKeys);
         } catch (IOException ioe) {
             System.out.println("Failed to sort the tbl file in preparation for indexing");
-            System.exit(1);
-        } catch (ClassNotFoundException ce) {
-            System.out.println("Cannot read schema");
             System.exit(1);
         }
 

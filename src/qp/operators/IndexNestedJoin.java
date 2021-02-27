@@ -40,7 +40,8 @@ public class IndexNestedJoin extends Join {
     Operator inner;                 // Which operator is the inner or outer loop
     private int conditionExprType;  // Type of condition expr
     private BPlusTree<BPlusTreeKey, Long> index;   // Index
-    private int conditionUsedForIndex;
+    private int conditionUsedForIndex;             // The index of the attribute used for joining
+    private boolean isRfBaseTable;                     // We can only use the index if right file is base table
 
     public IndexNestedJoin(Join jn) {
         super(jn.getLeft(), jn.getRight(), jn.getConditionList(), jn.getOpType());
@@ -80,6 +81,7 @@ public class IndexNestedJoin extends Join {
             outerindex = leftindex;
         }
 
+        isRfBaseTable = true;
         Batch rightpage;
         /** initialize the cursors of input buffers **/
         ocurs = 0;
@@ -100,7 +102,7 @@ public class IndexNestedJoin extends Join {
              ** Materialize the intermediate result from right
              ** into a file
              **/
-            // TODO: Abstract this out into another function
+            isRfBaseTable = false;
             try {
                 ObjectOutputStream out = new ObjectOutputStream(
                     new FileOutputStream(getRfName()));
@@ -132,6 +134,15 @@ public class IndexNestedJoin extends Join {
         }
         outbatch = new Batch(batchsize);
         return indexJoin(outbatch);
+    }
+
+    /**
+     * Close the operator
+     */
+    public boolean close() {
+        File f = new File(getRfName());
+        f.delete();
+        return true;
     }
 
     /**
@@ -197,13 +208,15 @@ public class IndexNestedJoin extends Join {
         ArrayList<Tuple> innerTuplesToJoin = new ArrayList<>();
 
         try {
-            FileInputStream fins = new FileInputStream(getRfName());
+            int innerTupleIndex = innerindex.get(outerindex.indexOf(conditionUsedForIndex));
+            // NOTE: Assumes that cwd is in same directory as table
+            FileInputStream fins = new FileInputStream(
+                inner.getSchema().getAttribute(innerTupleIndex).getTabName() + ".tbl");
             while (offset > 0) {
                 long skipped = fins.skip(offset);
                 offset -= skipped;
             }
             ObjectInputStream ins = new ObjectInputStream(fins);
-            int innerTupleIndex = outerindex.indexOf(conditionUsedForIndex);
 
             // First find the first instance of the matching tuple
             Tuple innerTuple = (Tuple) ins.readObject();
@@ -259,7 +272,9 @@ public class IndexNestedJoin extends Join {
         String indexPath = "";
 
         // Set the inner and outer schema in the loop
-        if (rightMap.isEmpty() && leftMap.isEmpty()) {
+        if ((rightMap.isEmpty() && leftMap.isEmpty()) ||
+            (leftMap.isEmpty() && !isRfBaseTable))
+        {
             // TODO: Default back to normal join?
             System.out.println("Can't index join with no indexes available");
             System.exit(1);
@@ -310,7 +325,7 @@ public class IndexNestedJoin extends Join {
      * @return empty string if no index is found, else returns an absolute path to the file.
      */
     private static String getIndexIfExists(Attribute attr) {
-        String cwd = Paths.get("").toAbsolutePath().toString();
+        String cwd = Paths.get("").getParent().toAbsolutePath().toString();
         File indexesDir = new File(cwd + "/indexes");
 
         for (String filename: indexesDir.list()) {
@@ -346,7 +361,7 @@ public class IndexNestedJoin extends Join {
      * @return absolute file to Rf
      */
     private String getRfName() {
-        return Paths.get("").toAbsolutePath().toString()
+        return Paths.get("").getParent().toString()
             + "/tmp/right-" +  uuid.toString();
     }
 }
