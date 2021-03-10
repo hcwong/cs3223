@@ -3,15 +3,12 @@ package qp.operators;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.UUID;
 import qp.optimizer.BufferManager;
 import qp.utils.Attribute;
 import qp.utils.BPlusTree;
@@ -21,15 +18,11 @@ import qp.utils.Condition;
 import qp.utils.Tuple;
 
 public class IndexNestedJoin extends Join {
-    UUID uuid;                      // Get a unique file name
     int batchsize;                  // Number of tuples per out batch
     ArrayList<Integer> innerindex;  // Indices of the join attributes in inner table
     ArrayList<Integer> outerindex;  // Indices of the join attributes in the outer table
-    String rfname;                  // The file name where the right table is materialized
     Batch outbatch;                 // Buffer page for output
     Batch outerBatch;                // Buffer page for left input stream
-    Batch innerBatch;               // Buffer page for right input stream
-    ObjectInputStream in;           // File pointer to the right hand materialized file
 
     int ocurs;                      // Cursor for left side buffer
     int icurs;                      // Cursor for right side buffer
@@ -41,14 +34,12 @@ public class IndexNestedJoin extends Join {
     private int conditionExprType;  // Type of condition expr
     private BPlusTree<BPlusTreeKey, Long> index;   // Index
     private int conditionUsedForIndex;             // The index of the attribute used for joining
-    private boolean isRfBaseTable;                     // We can only use the index if right file is base table
 
     public IndexNestedJoin(Join jn) {
         super(jn.getLeft(), jn.getRight(), jn.getConditionList(), jn.getOpType());
         schema = jn.getSchema();
         jointype = jn.getJoinType();
         numBuff = jn.getNumBuff();
-        uuid = UUID.randomUUID();
     }
 
     /**
@@ -85,8 +76,6 @@ public class IndexNestedJoin extends Join {
             outerindex = leftindex;
         }
 
-        isRfBaseTable = true;
-        Batch rightpage;
         /** initialize the cursors of input buffers **/
         ocurs = 0;
         icurs = 0;
@@ -96,31 +85,8 @@ public class IndexNestedJoin extends Join {
          **/
         eosi = true;
 
-        /** Right hand side table is to be materialized
-         ** for the Nested join to perform
-         **/
-        if (right.open()) {
-            return true;
-        } else {
-            /** If the right operator is not a base table then
-             ** Materialize the intermediate result from right
-             ** into a file
-             **/
-            isRfBaseTable = false;
-            try {
-                ObjectOutputStream out = new ObjectOutputStream(
-                    new FileOutputStream(getRfName()));
-                while ((rightpage = right.next()) != null) {
-                    out.writeObject(rightpage);
-                }
-                out.close();
-            } catch (IOException io) {
-                System.out.println("IndexNestedJoin: Error writing to temporary file");
-                return false;
-            }
-            if (!right.close())
-                return false;
-        }
+        if (!right.open())
+            return false;
         if (left.open())
             return true;
         else
@@ -144,8 +110,6 @@ public class IndexNestedJoin extends Join {
      * Close the operator
      */
     public boolean close() {
-        File f = new File(getRfName());
-        f.delete();
         return true;
     }
 
@@ -221,8 +185,7 @@ public class IndexNestedJoin extends Join {
                 inner.getSchema().getAttribute(outerTupleIndex).getTabName() + ".tbl");
             ObjectInputStream ins = new ObjectInputStream(fins);
 
-            // TODO: Figure out the reading from the index
-            int offsetInt = Math.toIntExact(offset);
+            fins.getChannel().position(offset);
 
             // First find the first instance of the matching tuple
             Tuple innerTuple = (Tuple) ins.readObject();
@@ -256,7 +219,7 @@ public class IndexNestedJoin extends Join {
     }
 
     /**
-     * Setup the operator for an index nexted join
+     * Setup the operator for an index nested join
      * We read in the index if it exists and check for a condition we can do the index nested join on
      */
     private void setup() {
@@ -269,7 +232,7 @@ public class IndexNestedJoin extends Join {
             }
         }
 
-        // If no equality condition to sort by
+        // If no equality condition to sort by, use random inequality condition
         if (leftConditions.isEmpty()) {
             for (Condition cond: conditionList) {
                 leftConditions.add(cond.getLhs());
@@ -282,13 +245,18 @@ public class IndexNestedJoin extends Join {
         String indexPath = "";
 
         // Set the inner and outer schema in the loop
-        if ((rightMap.isEmpty() && leftMap.isEmpty()) ||
-            (leftMap.isEmpty() && !isRfBaseTable))
-        {
-            // TODO: Default back to normal join?
-            System.out.println("Can't index join with no indexes available");
-            System.exit(1);
-        } else if (leftMap.isEmpty()) {
+        if (!leftMap.isEmpty() && left instanceof Scan) {
+            inner = left;
+            outer = right;
+            Attribute indexAttr = (Attribute) leftMap.keySet().toArray()[0];
+            indexPath = leftMap.get(indexAttr);
+            for (Condition cond: conditionList) {
+                if (cond.getLhs().equals(indexAttr)) {
+                    conditionUsedForIndex = left.getSchema().indexOf(indexAttr);
+                    break;
+                }
+            }
+        } else if (!rightMap.isEmpty() && right instanceof Scan){
             inner = right;
             outer = left;
             Attribute indexAttr = (Attribute) rightMap.keySet().toArray()[0];
@@ -300,16 +268,9 @@ public class IndexNestedJoin extends Join {
                 }
             }
         } else {
-            inner = left;
-            outer = right;
-            Attribute indexAttr = (Attribute) leftMap.keySet().toArray()[0];
-            indexPath = leftMap.get(indexAttr);
-            for (Condition cond: conditionList) {
-                if (cond.getLhs().equals(indexAttr)) {
-                    conditionUsedForIndex = left.getSchema().indexOf(indexAttr);
-                    break;
-                }
-            }
+            // TODO: Default to block nested loop join
+            System.out.println("Implement block nested loop here");
+            System.exit(1);
         }
 
         // Load the index into memory
@@ -361,13 +322,5 @@ public class IndexNestedJoin extends Join {
         }
 
         return indexesMap;
-    }
-
-    /**
-     * @return absolute file to Rf
-     */
-    private String getRfName() {
-        return Paths.get("").toAbsolutePath().getParent().toString()
-            + "/tmp/right-" +  uuid.toString();
     }
 }

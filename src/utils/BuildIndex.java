@@ -100,34 +100,20 @@ public class BuildIndex {
         boolean eos = false;
         long offsetPosition = 0;
         BPlusTree<BPlusTreeKey, Long> index = new BPlusTree<>(order);
-        List<BPlusTreeKey> keysSeen = new ArrayList<>();
 
         while (!eos) {
            try {
-               // We read in the file page by page. The value of each leaf node
-               // pointer is the offset of the page from the head of the .tbl file
                offsetPosition = fin.getChannel().position();
-               for (int i = 0; i < batchSize; i++) {
-                   // TODO: Abstract out read tuple to somewhere more appropriate.
-                   Tuple tuple = ExternalSort.readTuple(ois);
-                   keysSeen.add(buildKey(tuple, indexKeys));
-               }
 
-               // Note that the same offset position is used for every tuple in the page
-               for (BPlusTreeKey key: keysSeen) {
-                   // This check is important. Else if the key already exists,
-                   // such as in a case where a key is spread across two blocks
-                   // we will overwrite the original offset value
-                   if (index.search(key) != null)
-                       index.insert(key, offsetPosition);
-               }
+               // TODO: Abstract out read tuple to somewhere more appropriate.
+               Tuple tuple = ExternalSort.readTuple(ois);
+               BPlusTreeKey key = buildKey(tuple, indexKeys);
+               // Do not insert into the index if it already exists
+               if (index.search(key) == null)
+                   index.insert(key, offsetPosition);
+
            } catch (EOFException e) {
                eos = true;
-               if (!keysSeen.isEmpty()) {
-                   for (BPlusTreeKey key: keysSeen) {
-                       index.insert(key, offsetPosition);
-                   }
-               }
            } catch (IOException ioe) {
                System.out.println("IO Exception when reading tuples");
                System.exit(1);
