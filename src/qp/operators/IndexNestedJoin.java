@@ -3,10 +3,12 @@ package qp.operators;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import qp.optimizer.BufferManager;
@@ -32,7 +34,7 @@ public class IndexNestedJoin extends Join {
     Operator outer;                 // Which operator is the inner or outer loop
     Operator inner;                 // Which operator is the inner or outer loop
     private int conditionExprType;  // Type of condition expr
-    private BPlusTree<BPlusTreeKey, Long> index;   // Index
+    private BPlusTree<BPlusTreeKey, String> index;   // Index
     private int conditionUsedForIndex;             // The index of the attribute used for joining
 
     public IndexNestedJoin(Join jn) {
@@ -172,50 +174,63 @@ public class IndexNestedJoin extends Join {
         List<Object> keyValues = new ArrayList<>();
         keyValues.add(outerTuple.dataAt(outerTupleIndex));
         BPlusTreeKey key = new BPlusTreeKey(keyValues);
-        Long offset = index.search(key);
+        String batchPath = index.search(key);
 
-        if (offset == null)
+        if (batchPath == null)
             return null;
 
         ArrayList<Tuple> innerTuplesToJoin = new ArrayList<>();
+        String[] paths = batchPath.split("-");
 
-        try {
-            // NOTE: Assumes that cwd is in same directory as table
-            FileInputStream fins = new FileInputStream(
-                inner.getSchema().getAttribute(outerTupleIndex).getTabName() + ".tbl");
-            ObjectInputStream ins = new ObjectInputStream(fins);
+        boolean continueReading = true;
+        String basePath = String.join("-",
+            Arrays.copyOfRange(paths, 0, paths.length - 1));
+        int pathCount = Integer.parseInt(paths[paths.length - 1]);
 
-            fins.getChannel().position(offset);
-
-            // First find the first instance of the matching tuple
-            Tuple innerTuple = (Tuple) ins.readObject();
-            while (!innerTuple.dataAt(conditionUsedForIndex).equals(outerTuple.dataAt(outerTupleIndex))) {
-                innerTuple = (Tuple) ins.readObject();
+        // We start reading from the
+        while (continueReading) {
+            FileInputStream fins = null;
+            ObjectInputStream ins = null;
+            try {
+                fins = new FileInputStream
+                    (basePath + "-" + Integer.toString(pathCount));
+                ins = new ObjectInputStream(fins);
+            } catch (FileNotFoundException fe) {
+                return innerTuplesToJoin;
+            } catch (IOException ioe) {
+                ioe.printStackTrace();
+                System.out.println("Failed to open batch file");
+                System.exit(1);
             }
-            innerTuplesToJoin.add(innerTuple);
-            innerTuple = (Tuple) ins.readObject();
 
-            // Get the rest of the matching tuples
-            while (innerTuple.dataAt(conditionUsedForIndex).equals(outerTuple.dataAt(outerTupleIndex))) {
-                innerTuplesToJoin.add(innerTuple);
-                innerTuple = (Tuple) ins.readObject();
+            boolean foundMatching = false;
+            // Read the
+            while (true) {
+                try {
+                    Tuple innerTuple = (Tuple) ins.readObject();
+                    if (innerTuple.dataAt(conditionUsedForIndex)
+                        .equals(outerTuple.dataAt(outerTupleIndex)))
+                    {
+                        foundMatching = true;
+                        innerTuplesToJoin.add(innerTuple);
+                    } else if (foundMatching) {
+                        continueReading = false;
+                        break;
+                    }
+                } catch (EOFException eof) {
+                    pathCount++;
+                    break;
+                } catch (IOException ioe) {
+                    ioe.printStackTrace();
+                    System.out.println("Issue while handling joining");
+                    System.exit(1);
+                } catch (ClassNotFoundException ce) {
+                    System.exit(1);
+                }
             }
-
-            ins.close();
-            fins.close();
-
-            return innerTuplesToJoin;
-        } catch (EOFException eof) {
-            return innerTuplesToJoin;
-        } catch (IOException ioe) {
-            ioe.printStackTrace();
-            System.out.println("Failed to get the index file");
-            System.exit(1);
-        } catch (ClassNotFoundException ce) {
-            System.exit(1);
         }
 
-        return null;
+        return innerTuplesToJoin;
     }
 
     /**
@@ -276,7 +291,7 @@ public class IndexNestedJoin extends Join {
         // Load the index into memory
         try {
             ObjectInputStream ins = new ObjectInputStream(new FileInputStream(indexPath));
-            index = (BPlusTree<BPlusTreeKey, Long>) ins.readObject();
+            index = (BPlusTree<BPlusTreeKey, String>) ins.readObject();
         } catch (IOException ioe) {
             System.out.println("Cannot find index file in index nested join");
             System.exit(1);
