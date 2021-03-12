@@ -55,6 +55,11 @@ public class BuildIndex {
             BPlusTree<BPlusTreeKey, String> index = build(
                 order, tblPath, indexKeys, pageSize,
                 numberOfBuffers, mdPath, tupleSize, indexPath);
+
+            // Set the first and last keys here for easy reference later
+            index.setFirstKey();
+            index.setLastKey();
+
             ObjectOutputStream outs = new ObjectOutputStream(
                 new FileOutputStream(indexPath)
             );
