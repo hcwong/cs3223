@@ -139,7 +139,7 @@ public class IndexNestedJoin extends Join {
             }
 
             // Need to use indexes here
-            for (; ocurs < outerBatch.size(); ocurs++) {
+            while (ocurs < outerBatch.size()) {
                 Tuple outerTuple = outerBatch.get(ocurs);
                 ArrayList<Tuple> matchingTuples = null;
 
@@ -171,6 +171,8 @@ public class IndexNestedJoin extends Join {
                     }
                 }
                 matchingTuplesIndex = 0;
+                // ocurs can only be incremented here
+                ocurs++;
             }
 
             if (eoso) {
