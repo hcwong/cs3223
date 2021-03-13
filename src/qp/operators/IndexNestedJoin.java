@@ -4,8 +4,11 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectInput;
 import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,7 +25,12 @@ import qp.utils.Condition;
 import qp.utils.Tuple;
 
 public class IndexNestedJoin extends Join {
+    /**
+     * The default ordering is left == outer and right == inner if it
+     * defaults to a block nested join
+     */
     int batchsize;                  // Number of tuples per out batch
+    String rfname;
     ArrayList<Integer> innerindex;  // Indices of the join attributes in inner table
     ArrayList<Integer> outerindex;  // Indices of the join attributes in the outer table
     Batch outbatch;                 // Buffer page for output
@@ -31,8 +39,10 @@ public class IndexNestedJoin extends Join {
     int ocurs;                      // Cursor for left side buffer
     int icurs;                      // Cursor for right side buffer
     int matchingTuplesIndex;        // Enables us to handle a many to one join.
-    boolean eoso;                   // Whether end of stream (left table) is reached
-    boolean eosi;                   // Whether end of stream (right table) is reached
+    boolean eoso;                   // Whether end of stream (outer table) is reached
+    boolean eosi;                   // Whether end of stream (inner table) is reached
+    ObjectInputStream rightInputStream;  // Used if it falls back to block nested join
+    Batch rightBatch;               // Store the right batch's result
 
     Operator outer;                 // Which operator is the inner or outer loop
     Operator inner;                 // Which operator is the inner or outer loop
@@ -40,11 +50,15 @@ public class IndexNestedJoin extends Join {
     private BPlusTree<BPlusTreeKey, String> index;   // Index
     private int attrIndexInTreeIndex;             // The index of the attribute used for joining
 
+    static int filenum = 0;         // Unique filename
+
     public IndexNestedJoin(Join jn) {
         super(jn.getLeft(), jn.getRight(), jn.getConditionList(), jn.getOpType());
         schema = jn.getSchema();
         jointype = jn.getJoinType();
         numBuff = jn.getNumBuff();
+        this.conditionUsedForIndexJoin = null;
+        this.rfname = null;
     }
 
     /**
@@ -91,9 +105,13 @@ public class IndexNestedJoin extends Join {
         eosi = true;
 
         matchingTuplesIndex = 0;
+        rightBatch = new Batch(0);
 
-        if (!right.open())
+        if (!right.open()) {
             return false;
+        } else {
+            materializeRf();
+        }
         if (left.open())
             return true;
         else
@@ -105,19 +123,28 @@ public class IndexNestedJoin extends Join {
      * @return Batch
      */
     public Batch next() {
-        // We must check if ocurs is >= the outerbatch size
-        // This is because it is possible for there to still be data in outerbatch while eoso is true.
-        if (eoso && ocurs >= outerBatch.size()) {
-            return null;
+        // If we can do an index nested join, we do it
+        if (conditionUsedForIndexJoin != null) {
+            // We must check if ocurs is >= the outerbatch size
+            // This is because it is possible for there to still be data in outerbatch while eoso is true.
+            if (eoso && ocurs >= outerBatch.size()) {
+                return null;
+            }
+            outbatch = new Batch(batchsize);
+            return indexJoin(outbatch);
+        } else {
+            return blockNestedJoin();
         }
-        outbatch = new Batch(batchsize);
-        return indexJoin(outbatch);
     }
 
     /**
      * Close the operator
      */
     public boolean close() {
+        if (conditionUsedForIndexJoin == null) {
+            File f = new File(rfname);
+            f.delete();
+        }
         return true;
     }
 
@@ -148,7 +175,6 @@ public class IndexNestedJoin extends Join {
                 } else {
                     matchingTuples = getMatchOnInequality(outerTuple);
                 }
-
 
                 // Matching tuple not found
                 if (matchingTuples == null) {
@@ -388,6 +414,83 @@ public class IndexNestedJoin extends Join {
     }
 
     /**
+     * This is just a standard block nested join
+     * The block nested loop works as such:
+     * First load in as many left pages as possible
+     * Then load in 1 right page and join all the tuples
+     * Continue until the right side EOFs, then we reload all the leftpages again.
+     * @return Next Batch to return
+     */
+    private Batch blockNestedJoin() {
+        if (eoso && eosi) {
+            return null;
+        }
+
+        outbatch = new Batch(batchsize);
+        while (!eoso || !eosi) {
+            while (!eoso && !outerBatch.isFull()) {
+                Batch nextBatch = outer.next();
+                if (nextBatch == null) {
+                    eoso = true;
+                    break;
+                }
+                outerBatch.addBatch(nextBatch);
+            }
+
+            // If end of stream for right, restart it
+            if (eosi) {
+                try {
+                    rightInputStream = new ObjectInputStream(new FileInputStream(rfname));
+                    eosi = false;
+                } catch (IOException ioe) {
+                    System.out.println("IndexNestedJoin: Failed to open rf file");
+                    System.exit(1);
+                }
+            }
+
+            // Read in a new right batch if necessary
+            if (icurs >= rightBatch.size()) {
+                try {
+                    rightBatch = (Batch) rightInputStream.readObject();
+                    icurs = 0;
+                } catch (EOFException eof) {
+                    // If eosi is true, then we need to start reading in the new left blocks
+                    eosi = true;
+                    outerBatch.clear();
+                } catch (ClassNotFoundException ce) {
+                    System.exit(1);
+                } catch (IOException ioe) {
+                    System.out.println("Index Nested Join: Cannot read in right batch");
+                    System.exit(1);
+                }
+            }
+
+            while (icurs < rightBatch.size()) {
+                Tuple rightTuple = rightBatch.get(icurs);
+
+                while (ocurs < outerBatch.size()) {
+                    Tuple leftTuple = outerBatch.get(ocurs);
+                    ocurs++;
+
+                    if (leftTuple.checkJoin(rightTuple, outerindex, innerindex, conditionList)) {
+                        outbatch.add(leftTuple.joinWith(rightTuple));
+
+                        if (outbatch.isFull()) {
+                            return outbatch;
+                        }
+                    }
+                }
+
+                ocurs = 0;
+                icurs++;
+            }
+        }
+
+        // There may be a scenario where outbatch has some stuff remaining here
+        return outbatch;
+    }
+
+    /**
      * Setup the operator for an index nested join
      * We read in the index if it exists and check for a condition we can do the index nested join on
      */
@@ -439,21 +542,22 @@ public class IndexNestedJoin extends Join {
                 }
             }
         } else {
-            // TODO: Default to block nested loop join
-            System.out.println("Implement block nested loop here");
-            System.exit(1);
+            outer = left;
+            inner = right;
         }
 
-        // Load the index into memory
-        try {
-            ObjectInputStream ins = new ObjectInputStream(new FileInputStream(indexPath));
-            index = (BPlusTree<BPlusTreeKey, String>) ins.readObject();
-        } catch (IOException ioe) {
-            System.out.println("Cannot find index file in index nested join");
-            System.exit(1);
-        } catch (ClassNotFoundException ce) {
-            System.out.println("Class not found in index nested join");
-            System.exit(1);
+        // Load the index into memory if using index nested loop
+        if (conditionUsedForIndexJoin != null) {
+            try {
+                ObjectInputStream ins = new ObjectInputStream(new FileInputStream(indexPath));
+                index = (BPlusTree<BPlusTreeKey, String>) ins.readObject();
+            } catch (IOException ioe) {
+                System.out.println("Cannot find index file in index nested join");
+                System.exit(1);
+            } catch (ClassNotFoundException ce) {
+                System.out.println("Class not found in index nested join");
+                System.exit(1);
+            }
         }
     }
 
@@ -493,5 +597,25 @@ public class IndexNestedJoin extends Join {
         }
 
         return indexesMap;
+    }
+
+    /**
+     * Fall back to block nested join if there are no indexes
+     */
+    private void materializeRf() {
+        filenum++;
+        rfname = "INJ-" + filenum;
+        try {
+            ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(rfname));
+            Batch rightpage = right.next();
+            while (rightpage != null) {
+                out.writeObject(rightpage);
+                rightpage = right.next();
+            }
+            out.close();
+        } catch (IOException io) {
+            System.out.println("Index Nested Join: Error materializing right file");
+            System.exit(1);
+        }
     }
 }
