@@ -60,6 +60,57 @@ public class Tuple implements Serializable {
         return true;
     }
 
+    public boolean checkJoin(Tuple right,
+                             ArrayList<Integer> leftindex,
+                             ArrayList<Integer> rightindex,
+                             ArrayList<Condition> conditions
+    ) {
+        if (leftindex.size() != rightindex.size())
+            return false;
+        for (int i = 0; i < leftindex.size(); ++i) {
+            Object leftData = dataAt(leftindex.get(i));
+            Object rightData = right.dataAt(rightindex.get(i));
+            Condition cond = conditions.get(i);
+
+            switch(cond.getExprType()) {
+            case Condition.LESSTHAN:
+                if (compareTuples(this, right, i, i) >= 0) {
+                    return false;
+                }
+                break;
+            case Condition.GREATERTHAN:
+                if (compareTuples(this, right, i, i) <= 0) {
+                    return false;
+                }
+                break;
+            case Condition.LTOE:
+                if (compareTuples(this, right, i, i) > 0) {
+                    return false;
+                }
+                break;
+            case Condition.GTOE:
+                if (compareTuples(this, right, i, i) < 0) {
+                    return false;
+                }
+                break;
+            case Condition.EQUAL:
+                if (!leftData.equals(rightData)) {
+                    return false;
+                }
+                break;
+            case Condition.NOTEQUAL:
+                if (leftData.equals(rightData)) {
+                    return false;
+                }
+                break;
+            default:
+                System.out.println("Nested Loop: Switch statement cannot recognise case");
+                System.exit(1);
+            }
+        }
+        return true;
+    }
+
     /**
      * Joining two tuples without duplicate column elimination
      **/

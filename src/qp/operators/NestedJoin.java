@@ -136,9 +136,11 @@ public class NestedJoin extends Join {
                         for (j = rcurs; j < rightbatch.size(); ++j) {
                             Tuple lefttuple = leftbatch.get(i);
                             Tuple righttuple = rightbatch.get(j);
-                            if (lefttuple.checkJoin(righttuple, leftindex, rightindex)) {
+
+                            if (lefttuple.checkJoin(righttuple, leftindex, rightindex, conditionList)) {
                                 Tuple outtuple = lefttuple.joinWith(righttuple);
                                 outbatch.add(outtuple);
+
                                 if (outbatch.isFull()) {
                                     if (i == leftbatch.size() - 1 && j == rightbatch.size() - 1) {  //case 1
                                         lcurs = 0;
