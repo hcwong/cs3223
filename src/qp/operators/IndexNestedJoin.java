@@ -160,9 +160,14 @@ public class IndexNestedJoin extends Join {
                     matchingTuplesIndex++;
 
                     if (inner == left) {
-                        outbatch.add(innerTuple.joinWith(outerTuple));
-                    } else
-                        outbatch.add(outerTuple.joinWith(innerTuple));
+                        if (innerTuple.checkJoin(outerTuple, innerindex, outerindex, conditionList)) {
+                            outbatch.add(innerTuple.joinWith(outerTuple));
+                        }
+                    } else {
+                        if (outerTuple.checkJoin(innerTuple, outerindex, innerindex, conditionList)) {
+                            outbatch.add(outerTuple.joinWith(innerTuple));
+                        }
+                    }
 
                     if (outbatch.isFull()) {
                         // This is necessary so we dont repeat the ocurs the next time
@@ -252,6 +257,7 @@ public class IndexNestedJoin extends Join {
         return innerTuplesToJoin;
     }
 
+    // TODO: Refactor
     private ArrayList<Tuple> getMatchOnInequality(Tuple outerTuple) {
         int outerTupleIndex = outerindex.get(innerindex.indexOf(attrIndexInTreeIndex));
         List<Object> keyValues = new ArrayList<>();
@@ -259,25 +265,41 @@ public class IndexNestedJoin extends Join {
         BPlusTreeKey key = new BPlusTreeKey(keyValues);
 
         List<String> batchPaths = new ArrayList<>();
-        switch (conditionUsedForIndexJoin.getExprType()) {
-        case Condition.LESSTHAN:
-            batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
-                key, BPlusTree.RangePolicy.EXCLUSIVE);
-            break;
-        case Condition.GREATERTHAN:
-            batchPaths = index.searchRange(key, BPlusTree.RangePolicy.EXCLUSIVE,
-                index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
-            break;
-        case Condition.LTOE:
-            batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
-                key, BPlusTree.RangePolicy.INCLUSIVE);
-            break;
-        case Condition.GTOE:
-            batchPaths = index.searchRange(key, BPlusTree.RangePolicy.INCLUSIVE,
-                index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
-            break;
-        default:
-            System.out.println("Unable to get match on this condition expr type");
+        // TODO: This is very confusing and needs to be factored
+        if (conditionUsedForIndexJoin.getExprType() == Condition.LESSTHAN) {
+            if (inner == left) {
+                batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
+                    key, BPlusTree.RangePolicy.EXCLUSIVE);
+            } else {
+                batchPaths = index.searchRange(key, BPlusTree.RangePolicy.EXCLUSIVE,
+                    index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
+            }
+        } else if (conditionUsedForIndexJoin.getExprType() == Condition.GREATERTHAN) {
+            if (inner == left) {
+                batchPaths = index.searchRange(key, BPlusTree.RangePolicy.EXCLUSIVE,
+                    index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
+            } else {
+                batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
+                    key, BPlusTree.RangePolicy.EXCLUSIVE);
+            }
+        } else if (conditionUsedForIndexJoin.getExprType() == Condition.LTOE) {
+            if (inner == left) {
+                batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
+                    key, BPlusTree.RangePolicy.INCLUSIVE);
+            } else {
+                batchPaths = index.searchRange(key, BPlusTree.RangePolicy.INCLUSIVE,
+                    index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
+            }
+        } else if (conditionUsedForIndexJoin.getExprType() == Condition.GTOE) {
+            if (inner == left) {
+                batchPaths = index.searchRange(key, BPlusTree.RangePolicy.INCLUSIVE,
+                    index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
+            } else {
+                batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
+                    key, BPlusTree.RangePolicy.INCLUSIVE);
+            }
+        } else {
+            System.out.println("Condition type not recognised");
             System.exit(1);
         }
 
@@ -294,36 +316,58 @@ public class IndexNestedJoin extends Join {
                 System.exit(1);
             }
 
+            // We need to refigure out which is left and right because of the condition check
+            Tuple leftTuple = null;
+            Tuple rightTuple = null;
+            int leftIndex = 0;
+            int rightIndex = 0;
+
+            if (left == inner) {
+                rightTuple = outerTuple;
+                rightIndex = outerTupleIndex;
+            } else {
+                leftTuple = outerTuple;
+                leftIndex = outerTupleIndex;
+            }
+
             while (true) {
-               try {
-                   Tuple innerTuple = ExternalSort.readTuple(ois);
+                try {
+                    Tuple innerTuple = ExternalSort.readTuple(ois);
+
+                    if (left == inner) {
+                        leftTuple = innerTuple;
+                        leftIndex = attrIndexInTreeIndex;
+                    } else {
+                        rightTuple = innerTuple;
+                        rightIndex = attrIndexInTreeIndex;
+                    }
 
                    // Check if it fulfills the conditions
                    switch (conditionUsedForIndexJoin.getExprType()) {
                    case Condition.LESSTHAN:
                        if (Tuple.compareTuples(
-                           innerTuple, outerTuple, attrIndexInTreeIndex, outerTupleIndex) < 0)
+                           leftTuple, rightTuple, leftIndex, rightIndex) < 0)
                        {
                            tuplesList.add(innerTuple);
                        }
                        break;
                    case Condition.GREATERTHAN:
                        if (Tuple.compareTuples(
-                           innerTuple, outerTuple, attrIndexInTreeIndex, outerTupleIndex) > 0)
+                           leftTuple, rightTuple, leftIndex, rightIndex) > 0)
                        {
                            tuplesList.add(innerTuple);
                        }
                        break;
                    case Condition.LTOE:
                        if (Tuple.compareTuples(
-                           innerTuple, outerTuple, attrIndexInTreeIndex, outerTupleIndex) <= 0)
+                           leftTuple, rightTuple, leftIndex, rightIndex) <= 0)
                        {
                            tuplesList.add(innerTuple);
                        }
                        break;
                    case Condition.GTOE:
                        if (Tuple.compareTuples(
-                           innerTuple, outerTuple, attrIndexInTreeIndex, outerTupleIndex) >= 0)
+                           leftTuple, rightTuple, leftIndex, rightIndex) >= 0)
                        {
                            tuplesList.add(innerTuple);
                        }
