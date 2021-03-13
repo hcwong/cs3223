@@ -48,6 +48,7 @@ public class Scan extends Operator {
         try {
             in = new ObjectInputStream(new FileInputStream(filename));
         } catch (Exception e) {
+            e.printStackTrace();
             System.err.println(" Error reading " + filename);
             return false;
         }
@@ -78,6 +79,7 @@ public class Scan extends Operator {
                 eos = true;
                 return tuples;
             } catch (IOException e) {
+                e.printStackTrace();
                 System.err.println("Scan:Error reading " + filename);
                 System.exit(1);
             }
