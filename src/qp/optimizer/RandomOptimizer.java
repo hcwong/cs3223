@@ -50,7 +50,7 @@ public class RandomOptimizer {
             int numbuff = BufferManager.getBuffersPerJoin();
             switch (joinType) {
                 case JoinType.NESTEDJOIN:
-                    NestedJoin nj = new NestedJoin((Join) node);
+                    BlockNestedJoin nj = new BlockNestedJoin((Join) node);
                     nj.setLeft(left);
                     nj.setRight(right);
                     nj.setNumBuff(numbuff);
