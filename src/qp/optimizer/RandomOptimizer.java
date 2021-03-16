@@ -55,6 +55,12 @@ public class RandomOptimizer {
                     nj.setRight(right);
                     nj.setNumBuff(numbuff);
                     return nj;
+                case JoinType.INDEXJOIN:
+                    IndexNestedJoin inj = new IndexNestedJoin((Join) node);
+                    inj.setLeft(left);
+                    inj.setRight(right);
+                    inj.setNumBuff(numbuff);
+                    return inj;
                 default:
                     return node;
             }
