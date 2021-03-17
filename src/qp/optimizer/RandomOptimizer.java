@@ -11,6 +11,7 @@ import qp.utils.RandNumb;
 import qp.utils.SQLQuery;
 
 import java.util.ArrayList;
+import java.util.Vector;
 
 public class RandomOptimizer {
 
@@ -55,6 +56,19 @@ public class RandomOptimizer {
                     nj.setRight(right);
                     nj.setNumBuff(numbuff);
                     return nj;
+                case JoinType.SORTMERGE:
+                    SortMergeJoin smj = new SortMergeJoin((Join) node);
+
+                    ArrayList<Attribute> leftAttrs = new ArrayList<>();
+                    leftAttrs.add(smj.getCondition().getLhs());
+                    smj.setLeft(new Sort(left, leftAttrs, numbuff));
+
+                    ArrayList<Attribute> rightAttrs = new ArrayList<>();
+                    rightAttrs.add((Attribute) smj.getCondition().getRhs());
+                    smj.setRight(new Sort(right, rightAttrs, numbuff));
+
+                    smj.setNumBuff(numbuff);
+                    return smj;
                 default:
                     return node;
             }
