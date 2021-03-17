@@ -11,6 +11,7 @@ import static qp.utils.Tuple.compareTuples;
 public class TupleComparator implements Comparator<Tuple> {
 
     private List<Integer> indexes;
+    private boolean isReverse;
 
     /**
      * Takes in a list of indexes. If tied on first index, use second index to tiebreak and so on.
@@ -18,7 +19,19 @@ public class TupleComparator implements Comparator<Tuple> {
      */
     public TupleComparator(List<Integer> indexes) {
        this.indexes = indexes;
+       this.isReverse = false;
     }
+
+    /**
+     * Takes in a list of indexes. If tied on first index, use second index to tiebreak and so on.
+     * This second comparator is if we want it to be reversed
+     * @param indexes List<Integer>
+     */
+    public TupleComparator(List<Integer> indexes, boolean isReverse) {
+        this.indexes = indexes;
+        this.isReverse = isReverse;
+    }
+
 
     /**
      * Comparing tuples using the static methods in Tuple class.
@@ -35,7 +48,7 @@ public class TupleComparator implements Comparator<Tuple> {
         for (Integer i: indexes) {
             int result = compareTuples(left, right, i);
             if (result != 0)
-                return result;
+                return this.isReverse ? result * -1 : result;
         }
         return 0;
     }

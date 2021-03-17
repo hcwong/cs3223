@@ -76,6 +76,8 @@ public class PlanCost {
             return getStatistics((Project) node);
         } else if (node.getOpType() == OpType.SCAN) {
             return getStatistics((Scan) node);
+        } else if (node.getOpType() == OpType.ORDERBY) {
+            return getStatistics((Orderby) node);
         }
         System.out.println("operator is not supported");
         isFeasible = false;
@@ -88,6 +90,22 @@ public class PlanCost {
      **/
     protected long getStatistics(Project node) {
         return calculateCost(node.getBase());
+    }
+
+    /**
+     * Calculates statistics of orderby operation
+     * @param node
+     * @return long
+     */
+    protected long getStatistics(Orderby node) {
+        long intuples = calculateCost(node.getBase());
+        if (!isFeasible) {
+            System.out.println("notFeasible");
+            return Long.MAX_VALUE;
+        }
+
+        double sortcost = Math.log(intuples) * intuples;
+        return 2 * intuples + Double.valueOf(sortcost).longValue();
     }
 
     /**

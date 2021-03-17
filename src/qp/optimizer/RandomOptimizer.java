@@ -364,10 +364,12 @@ public class RandomOptimizer {
         } else if (node.getOpType() == OpType.SCAN) {
             return null;
         } else if (node.getOpType() == OpType.SELECT) {
-            // if sort/project/select operator
+            // if sort/project/select/orderby operator
             return findNodeAt(((Select) node).getBase(), joinNum);
         } else if (node.getOpType() == OpType.PROJECT) {
             return findNodeAt(((Project) node).getBase(), joinNum);
+        } else if (node.getOpType() == OpType.ORDERBY) {
+            return findNodeAt(((Orderby) node).getBase(), joinNum);
         } else {
             return null;
         }
