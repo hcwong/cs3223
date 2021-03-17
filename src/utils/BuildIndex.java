@@ -23,6 +23,7 @@ import qp.utils.Tuple;
  * In our DB we assume that the indexes can all be loaded into memory (in-memory)
  * Our leaf nodes store the keys and the values are the offset of the page
  * the tuple is in from the file head.
+ * This is an unclustered index
  */
 public class BuildIndex {
     public static void main(String[] args) {
@@ -43,41 +44,49 @@ public class BuildIndex {
 
         // Save all files in the a folder called indexes at project root
         String currentAbsPath = Paths.get("").toAbsolutePath().toString();
-        BPlusTree<BPlusTreeKey, Long> index = build(order, tblPath, indexKeys, pageSize, numberOfBuffers);
-        String keysString = indexKeys.stream().map((i) -> Integer.toString(i))
-            .collect(Collectors.joining("-"));
-        try {
-            ObjectOutputStream outs = new ObjectOutputStream(
-                new FileOutputStream(
-                    String.format("%s/indexes/%s-%s", currentAbsPath, tblName, keysString)
-                )
-            );
-            outs.writeObject(index);
-        } catch (IOException ioe) {
-            System.out.println("Failed to write index to output file");
-            System.exit(1);
-        }
-    }
-
-    public static BPlusTree<BPlusTreeKey, Long> build(
-        int order, String tblPath, List<Integer> indexKeys, int pageSize, int numberOfBuffers
-    ) {
-        int tupleSize = 0;
-        String sortedTblPath = "";
-        // First sort the tbl so that we can get a clustered index.
-        // We assume the .md file and the .tbl file are in the same directory.
         try {
             String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
             ObjectInputStream schemaIns = new ObjectInputStream(new FileInputStream(mdPath));
             Schema schema = (Schema) schemaIns.readObject();
-            tupleSize = schema.getTupleSize();
-            ExternalSort sort = new ExternalSort(pageSize, numberOfBuffers);
-            sortedTblPath = sort.sort(tblPath, mdPath, indexKeys);
+            int tupleSize = schema.getTupleSize();
+            String keysString = indexKeys.stream().map(idx -> schema.getAttribute(idx).getColName())
+                .collect(Collectors.joining("-"));
+            String indexPath = String.format("%s/indexes/%s-%s", currentAbsPath, tblName, keysString);
+            BPlusTree<BPlusTreeKey, String> index = build(
+                order, tblPath, indexKeys, pageSize,
+                numberOfBuffers, mdPath, tupleSize, indexPath);
+
+            // Set the first and last keys here for easy reference later
+            index.setFirstKey();
+            index.setLastKey();
+
+            ObjectOutputStream outs = new ObjectOutputStream(
+                new FileOutputStream(indexPath)
+            );
+            outs.writeObject(index);
+            outs.close();
         } catch (IOException ioe) {
-            System.out.println("Failed to sort the tbl file in preparation for indexing");
+            System.out.println("Failed to write index to output file");
             System.exit(1);
         } catch (ClassNotFoundException ce) {
             System.out.println("Cannot read schema");
+            System.exit(1);
+        }
+    }
+
+    public static BPlusTree<BPlusTreeKey, String> build(
+        int order, String tblPath, List<Integer> indexKeys,
+        int pageSize, int numberOfBuffers, String mdPath, int tupleSize,
+        String indexPath
+    ) {
+        String sortedTblPath = "";
+        // We assume the .md file and the .tbl file are in the same directory.
+        try {
+            ExternalSort sort = new ExternalSort(pageSize, numberOfBuffers);
+            // Generates the sorted table
+            sortedTblPath = sort.sort(tblPath, mdPath, indexKeys);
+        } catch (IOException ioe) {
+            System.out.println("Failed to sort the tbl file in preparation for indexing");
             System.exit(1);
         }
 
@@ -95,36 +104,53 @@ public class BuildIndex {
         assert(batchSize > 2);
 
         boolean eos = false;
-        long offsetPosition = 0;
-        BPlusTree<BPlusTreeKey, Long> index = new BPlusTree<>(order);
-        List<BPlusTreeKey> keysSeen = new ArrayList<>();
+        BPlusTree<BPlusTreeKey, String> index = new BPlusTree<>(order);
+        List<Tuple> batch = new ArrayList<>();
+        int batchCount = 0;
 
         while (!eos) {
            try {
-               // We read in the file page by page. The value of each leaf node
-               // pointer is the offset of the page from the head of the .tbl file
-               offsetPosition = fin.getChannel().position();
                for (int i = 0; i < batchSize; i++) {
                    // TODO: Abstract out read tuple to somewhere more appropriate.
                    Tuple tuple = ExternalSort.readTuple(ois);
-                   keysSeen.add(buildKey(tuple, indexKeys));
+                   batch.add(tuple);
                }
 
-               // Note that the same offset position is used for every tuple in the page
-               for (BPlusTreeKey key: keysSeen) {
-                   index.insert(key, offsetPosition);
+               String batchFile = String.format("%s-%d", indexPath, batchCount);
+               ObjectOutputStream batchOos = new ObjectOutputStream(new FileOutputStream(batchFile));
+               for (Tuple tuple: batch) {
+                   BPlusTreeKey key = buildKey(tuple, indexKeys);
+                   // Do not insert into the index if it already exists
+                   if (index.search(key) == null)
+                       index.insert(key, batchFile);
+
+                   batchOos.writeObject(tuple);
                }
+               batch.clear();
+               batchCount++;
            } catch (EOFException e) {
                eos = true;
-               if (!keysSeen.isEmpty()) {
-                   for (BPlusTreeKey key: keysSeen) {
-                       index.insert(key, offsetPosition);
-                   }
-               }
            } catch (IOException ioe) {
                System.out.println("IO Exception when reading tuples");
                System.exit(1);
            }
+        }
+
+        // Insert the last batch
+        String batchFile = String.format("%s-%d", indexPath, batchCount);
+        try {
+            ObjectOutputStream batchOos = new ObjectOutputStream(new FileOutputStream(batchFile));
+            for (Tuple tuple: batch) {
+                BPlusTreeKey key = buildKey(tuple, indexKeys);
+                // Do not insert into the index if it already exists
+                if (index.search(key) == null)
+                    index.insert(key, batchFile);
+
+                batchOos.writeObject(tuple);
+            }
+        } catch (IOException ioe) {
+            System.out.println("Failed to write to batch");
+            System.exit(1);
         }
 
         try {

@@ -38,6 +38,13 @@ public class BPlusTree<K extends Comparable<? super K>, V> implements Serializab
      */
     private Node root;
 
+    /**
+     * The first and last keys in the tree
+     * This is useful for range queries
+     */
+    public K firstLeafKey;
+    public K lastLeafKey;
+
     public BPlusTree() {
         this(DEFAULT_BRANCHING_FACTOR);
     }
@@ -48,6 +55,8 @@ public class BPlusTree<K extends Comparable<? super K>, V> implements Serializab
                 + branchingFactor);
         this.branchingFactor = branchingFactor;
         root = new LeafNode();
+        firstLeafKey = null;
+        lastLeafKey = null;
     }
 
     /**
@@ -115,6 +124,14 @@ public class BPlusTree<K extends Comparable<? super K>, V> implements Serializab
         root.deleteValue(key);
     }
 
+    public void setFirstKey() {
+        this.firstLeafKey =  root.getFirstLeafKey();
+    }
+
+    public void setLastKey() {
+        this.lastLeafKey = root.getLastLeafKey();
+    }
+
     public String toString() {
         Queue<List<Node>> queue = new LinkedList<List<Node>>();
         queue.add(Arrays.asList(root));
@@ -159,6 +176,8 @@ public class BPlusTree<K extends Comparable<? super K>, V> implements Serializab
         abstract void insertValue(K key, V value);
 
         abstract K getFirstLeafKey();
+
+        abstract K getLastLeafKey();
 
         abstract List<V> getRange(K key1, RangePolicy policy1, K key2,
                                   RangePolicy policy2);
@@ -231,6 +250,11 @@ public class BPlusTree<K extends Comparable<? super K>, V> implements Serializab
         @Override
         K getFirstLeafKey() {
             return children.get(0).getFirstLeafKey();
+        }
+
+        @Override
+        K getLastLeafKey() {
+            return children.get(children.size() - 1).getLastLeafKey();
         }
 
         @Override
@@ -363,6 +387,11 @@ public class BPlusTree<K extends Comparable<? super K>, V> implements Serializab
         @Override
         K getFirstLeafKey() {
             return keys.get(0);
+        }
+
+        @Override
+        K getLastLeafKey() {
+            return keys.get(keys.size() - 1);
         }
 
         @Override

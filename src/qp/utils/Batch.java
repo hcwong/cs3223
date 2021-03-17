@@ -50,6 +50,10 @@ public class Batch implements Serializable {
         return tuples.get(i);
     }
 
+    public ArrayList<Tuple> getTuples() {
+        return tuples;
+    }
+
     public int indexOf(Tuple t) {
         return tuples.indexOf(t);
     }
@@ -79,5 +83,9 @@ public class Batch implements Serializable {
             return true;
         else
             return false;
+    }
+
+    public void addBatch(Batch newBatch) {
+        tuples.addAll(newBatch.getTuples());
     }
 }
