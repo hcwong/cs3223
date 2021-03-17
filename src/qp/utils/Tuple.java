@@ -214,4 +214,24 @@ public class Tuple implements Serializable {
         // Trim the last comma
         return sb.substring(0, sb.length() - 1);
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == this) {
+            return true;
+        }
+        if (o instanceof Tuple) {
+            Tuple t = (Tuple) o;
+            if (t._data.size() != this._data.size()) {
+                return false;
+            }
+            for (int i = 0; i < this._data.size(); i++) {
+                if (!t._data.get(i).equals(this._data.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
 }
