@@ -6,23 +6,21 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.stream.Collectors;
-import qp.algorithms.ExternalSort;
-import qp.optimizer.BufferManager;
 import qp.utils.Attribute;
 import qp.utils.BPlusTree;
 import qp.utils.BPlusTreeKey;
 import qp.utils.Batch;
 import qp.utils.Condition;
 import qp.utils.Tuple;
+import utils.BuildIndex;
 
 public class IndexNestedJoin extends Join {
     /**
@@ -47,8 +45,9 @@ public class IndexNestedJoin extends Join {
     Operator outer;                 // Which operator is the inner or outer loop
     Operator inner;                 // Which operator is the inner or outer loop
     private Condition conditionUsedForIndexJoin;  // Type of condition expr
-    private BPlusTree<BPlusTreeKey, String> index;   // Index
+    private BPlusTree<BPlusTreeKey, Long> index;   // Index
     private int attrIndexInTreeIndex;             // The index of the attribute used for joining
+    private FileChannel fc;
 
     static int filenum = 0;         // Unique filename
 
@@ -75,7 +74,7 @@ public class IndexNestedJoin extends Join {
 
         // Make left batch the size of the number of buffers available for join operator - 2
         // -2 because we do not count the buffer for the inner file and the output buffer
-        outerBatch = new Batch(batchsize * (BufferManager.getBuffersPerJoin() - 2));
+        outerBatch = new Batch(batchsize * (numBuff - 2));
 
         /** find indices attributes of join conditions **/
         ArrayList<Integer> leftindex = new ArrayList<>();
@@ -110,7 +109,8 @@ public class IndexNestedJoin extends Join {
         if (!right.open()) {
             return false;
         } else {
-            materializeRf();
+            if (conditionUsedForIndexJoin == null)
+                materializeRf();
         }
         if (left.open())
             return true;
@@ -156,7 +156,7 @@ public class IndexNestedJoin extends Join {
     private Batch indexJoin(Batch outbatch) {
         // We iterate until the end of the outer file
         while (!eoso || ocurs < outerBatch.size()) {
-            while (!outerBatch.isFull()) {
+            while (outerBatch.capacity() - batchsize > outerBatch.size()  && !eoso) {
                 Batch nextBatch = outer.next();
                 if (nextBatch == null) {
                     eoso = true;
@@ -168,8 +168,8 @@ public class IndexNestedJoin extends Join {
             // Need to use indexes here
             while (ocurs < outerBatch.size()) {
                 Tuple outerTuple = outerBatch.get(ocurs);
-                ArrayList<Tuple> matchingTuples = null;
 
+                ArrayList<Tuple> matchingTuples = new ArrayList<>();
                 if (conditionUsedForIndexJoin.getExprType() == Condition.EQUAL) {
                     matchingTuples = getMatchOnEquality(outerTuple);
                 } else {
@@ -177,7 +177,8 @@ public class IndexNestedJoin extends Join {
                 }
 
                 // Matching tuple not found
-                if (matchingTuples == null) {
+                if (matchingTuples.size() == 0) {
+                    ocurs++;
                     continue;
                 }
 
@@ -202,6 +203,7 @@ public class IndexNestedJoin extends Join {
                     }
                 }
                 matchingTuplesIndex = 0;
+                matchingTuples = null;
                 // ocurs can only be incremented here
                 ocurs++;
             }
@@ -215,7 +217,7 @@ public class IndexNestedJoin extends Join {
             ocurs = 0;
         }
 
-        return null;
+        return outbatch;
     }
 
     private ArrayList<Tuple> getMatchOnEquality(Tuple outerTuple) {
@@ -224,193 +226,225 @@ public class IndexNestedJoin extends Join {
         List<Object> keyValues = new ArrayList<>();
         keyValues.add(outerTuple.dataAt(outerTupleIndex));
         BPlusTreeKey key = new BPlusTreeKey(keyValues);
-        String batchPath = index.search(key);
-
-        if (batchPath == null)
-            return null;
-
+        Long offset = index.search(key);
         ArrayList<Tuple> innerTuplesToJoin = new ArrayList<>();
-        String[] paths = batchPath.split("-");
 
-        boolean continueReading = true;
-        String basePath = String.join("-",
-            Arrays.copyOfRange(paths, 0, paths.length - 1));
-        int pathCount = Integer.parseInt(paths[paths.length - 1]);
+        if (offset == null)
+            return innerTuplesToJoin;
 
-        // We start reading from the
-        while (continueReading) {
-            FileInputStream fins = null;
-            ObjectInputStream ins = null;
-            try {
-                fins = new FileInputStream
-                    (basePath + "-" + Integer.toString(pathCount));
-                ins = new ObjectInputStream(fins);
-            } catch (FileNotFoundException fe) {
-                return innerTuplesToJoin;
-            } catch (IOException ioe) {
-                ioe.printStackTrace();
-                System.out.println("Failed to open batch file");
-                System.exit(1);
-            }
-
-            boolean foundMatching = false;
-            // Read all matching tuples from the current batchfile
-            while (true) {
-                try {
-                    Tuple innerTuple = (Tuple) ins.readObject();
-                    if (innerTuple.dataAt(attrIndexInTreeIndex)
-                        .equals(outerTuple.dataAt(outerTupleIndex)))
-                    {
-                        foundMatching = true;
-                        innerTuplesToJoin.add(innerTuple);
-                    } else if (foundMatching) {
-                        continueReading = false;
-                        break;
-                    }
-                } catch (EOFException eof) {
-                    pathCount++;
-                    break;
-                } catch (IOException ioe) {
-                    ioe.printStackTrace();
-                    System.out.println("Issue while handling joining");
-                    System.exit(1);
-                } catch (ClassNotFoundException ce) {
-                    System.exit(1);
-                }
-            }
+        // Because tuples with the same key only get a single offset value, we need
+        // to iterate
+        Tuple innerTuple = BuildIndex.readTuple(fc, offset, index.serializedValueLength);
+        while (
+            innerTuple != null &&
+            innerTuple.dataAt(attrIndexInTreeIndex).equals(outerTuple.dataAt(outerTupleIndex))
+        ) {
+            innerTuplesToJoin.add(innerTuple);
+            offset += index.serializedValueLength;
+            innerTuple = BuildIndex.readTuple(fc, offset, index.serializedValueLength);
         }
 
         return innerTuplesToJoin;
     }
 
-    // TODO: Refactor
+
     private ArrayList<Tuple> getMatchOnInequality(Tuple outerTuple) {
         int outerTupleIndex = outerindex.get(innerindex.indexOf(attrIndexInTreeIndex));
         List<Object> keyValues = new ArrayList<>();
         keyValues.add(outerTuple.dataAt(outerTupleIndex));
         BPlusTreeKey key = new BPlusTreeKey(keyValues);
 
-        List<String> batchPaths = new ArrayList<>();
-        // TODO: This is very confusing and needs to be factored
+        ArrayList<Tuple> innerTuplesToJoin = new ArrayList<>();
+        int inequalityCase = getInequalityCases();
+        List<Long> offsetRange = getOffSetRange(key);
+
+        if (offsetRange.size() == 0) {
+            return innerTuplesToJoin;
+        }
+
+        Long firstOffset = offsetRange.get(0);
+        Long lastOffset = offsetRange.get(offsetRange.size() - 1);
+        Long offset = firstOffset;
+
+        // For Greater Than Relation we just add all the way till the end of the file
+        if (inequalityCase == 3 || inequalityCase == 4) {
+            Tuple innerTuple = BuildIndex.readTuple(fc, offset, index.serializedValueLength);
+            while (
+                innerTuple != null
+            ) {
+                innerTuplesToJoin.add(innerTuple);
+                offset += index.serializedValueLength;
+                innerTuple = BuildIndex.readTuple(fc, offset, index.serializedValueLength);
+            }
+        } else {
+            // Less then relations
+            Tuple innerTuple = BuildIndex.readTuple(fc, offset, index.serializedValueLength);
+            while (innerTuple != null && offset < lastOffset) {
+                innerTuplesToJoin.add(innerTuple);
+                offset += index.serializedValueLength;
+                innerTuple = BuildIndex.readTuple(fc, offset, index.serializedValueLength);
+            }
+
+            // Now we are at the last offset, we need to add until the offset reaches EOF (null) or
+            // until the value of the innerTuple no longer obeys the condition.
+            while (
+                innerTuple != null
+                && shouldAddInnerTuple(innerTuple, outerTuple, outerTupleIndex)
+            ) {
+                innerTuplesToJoin.add(innerTuple);
+                offset += index.serializedValueLength;
+                innerTuple = BuildIndex.readTuple(fc, offset, index.serializedValueLength);
+            }
+        }
+
+        return innerTuplesToJoin;
+    }
+
+    /**
+     * Determines if we should add the innerTuple to the innerTuplesToJoin List
+     * @param innerTuple
+     * @param outerTuple
+     * @return
+     */
+    private boolean shouldAddInnerTuple(
+        Tuple innerTuple, Tuple outerTuple, int outerTupleIndex
+    ) {
+        // We need to refigure out which is left and right because of the condition check
+        Tuple leftTuple = null;
+        Tuple rightTuple = null;
+        int leftIndex = 0;
+        int rightIndex = 0;
+
+        if (left == inner) {
+            rightTuple = outerTuple;
+            rightIndex = outerTupleIndex;
+        } else {
+            leftTuple = outerTuple;
+            leftIndex = outerTupleIndex;
+        }
+        if (left == inner) {
+            leftTuple = innerTuple;
+            leftIndex = attrIndexInTreeIndex;
+        } else {
+            rightTuple = innerTuple;
+            rightIndex = attrIndexInTreeIndex;
+        }
+
+        // Check if it fulfills the conditions
+        switch (conditionUsedForIndexJoin.getExprType()) {
+        case Condition.LESSTHAN:
+            if (Tuple.compareTuples(
+                leftTuple, rightTuple, leftIndex, rightIndex) < 0)
+            {
+                return true;
+            }
+            break;
+        case Condition.GREATERTHAN:
+            if (Tuple.compareTuples(
+                leftTuple, rightTuple, leftIndex, rightIndex) > 0)
+            {
+                return true;
+            }
+            break;
+        case Condition.LTOE:
+            if (Tuple.compareTuples(
+                leftTuple, rightTuple, leftIndex, rightIndex) <= 0)
+            {
+                return true;
+            }
+            break;
+        case Condition.GTOE:
+            if (Tuple.compareTuples(
+                leftTuple, rightTuple, leftIndex, rightIndex) >= 0)
+            {
+                return true;
+            }
+            break;
+        default:
+            System.out.println("Unable to get match on this condition expr type");
+            System.exit(1);
+        }
+        return false;
+    }
+
+    /**
+     * This function helps us classify how we handle inequality matches
+     * @return Int from 1-4
+     * 1 means it's a Less than relationship
+     * 2 means it's a Less than or equal to relationship
+     * 3 means it's a greater than relationship
+     * 4 means it's a greater than or equal to relationship
+     */
+    private int getInequalityCases() {
         if (conditionUsedForIndexJoin.getExprType() == Condition.LESSTHAN) {
             if (inner == left) {
-                batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
+                return 1;
+            } else {
+                return 3;
+            }
+        } else if (conditionUsedForIndexJoin.getExprType() == Condition.GREATERTHAN) {
+            if (inner == left) {
+                return 3;
+            } else {
+                return 1;
+            }
+        } else if (conditionUsedForIndexJoin.getExprType() == Condition.LTOE) {
+            if (inner == left) {
+                return 2;
+            } else {
+                return 4;
+            }
+        } else if (conditionUsedForIndexJoin.getExprType() == Condition.GTOE) {
+            if (inner == left) {
+                return 4;
+            } else {
+                return 2;
+            }
+        } else {
+            System.out.println("Condition type not recognised");
+            System.exit(1);
+            return 0;
+        }
+    }
+
+    private List<Long> getOffSetRange(BPlusTreeKey key) {
+        if (conditionUsedForIndexJoin.getExprType() == Condition.LESSTHAN) {
+            if (inner == left) {
+                return index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
                     key, BPlusTree.RangePolicy.EXCLUSIVE);
             } else {
-                batchPaths = index.searchRange(key, BPlusTree.RangePolicy.EXCLUSIVE,
+                return index.searchRange(key, BPlusTree.RangePolicy.EXCLUSIVE,
                     index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
             }
         } else if (conditionUsedForIndexJoin.getExprType() == Condition.GREATERTHAN) {
             if (inner == left) {
-                batchPaths = index.searchRange(key, BPlusTree.RangePolicy.EXCLUSIVE,
+                return index.searchRange(key, BPlusTree.RangePolicy.EXCLUSIVE,
                     index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
             } else {
-                batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
+                return index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
                     key, BPlusTree.RangePolicy.EXCLUSIVE);
             }
         } else if (conditionUsedForIndexJoin.getExprType() == Condition.LTOE) {
             if (inner == left) {
-                batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
+                return index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
                     key, BPlusTree.RangePolicy.INCLUSIVE);
             } else {
-                batchPaths = index.searchRange(key, BPlusTree.RangePolicy.INCLUSIVE,
+                return index.searchRange(key, BPlusTree.RangePolicy.INCLUSIVE,
                     index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
             }
         } else if (conditionUsedForIndexJoin.getExprType() == Condition.GTOE) {
             if (inner == left) {
-                batchPaths = index.searchRange(key, BPlusTree.RangePolicy.INCLUSIVE,
+                return index.searchRange(key, BPlusTree.RangePolicy.INCLUSIVE,
                     index.lastLeafKey, BPlusTree.RangePolicy.INCLUSIVE);
             } else {
-                batchPaths = index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
+                return index.searchRange(index.firstLeafKey, BPlusTree.RangePolicy.INCLUSIVE,
                     key, BPlusTree.RangePolicy.INCLUSIVE);
             }
         } else {
             System.out.println("Condition type not recognised");
             System.exit(1);
+            return null;
         }
-
-        // Make sure batchPaths is unique
-        batchPaths = batchPaths.stream().distinct().collect(Collectors.toList());
-        // Read the matching tuples into the result list
-        ArrayList<Tuple> tuplesList = new ArrayList<>();
-        for (String path: batchPaths) {
-            ObjectInputStream ois = null;
-            try {
-                ois = new ObjectInputStream(new FileInputStream(path));
-            } catch (IOException ioe) {
-                System.out.println("Cannot find file at path");
-                System.exit(1);
-            }
-
-            // We need to refigure out which is left and right because of the condition check
-            Tuple leftTuple = null;
-            Tuple rightTuple = null;
-            int leftIndex = 0;
-            int rightIndex = 0;
-
-            if (left == inner) {
-                rightTuple = outerTuple;
-                rightIndex = outerTupleIndex;
-            } else {
-                leftTuple = outerTuple;
-                leftIndex = outerTupleIndex;
-            }
-
-            while (true) {
-                try {
-                    Tuple innerTuple = ExternalSort.readTuple(ois);
-
-                    if (left == inner) {
-                        leftTuple = innerTuple;
-                        leftIndex = attrIndexInTreeIndex;
-                    } else {
-                        rightTuple = innerTuple;
-                        rightIndex = attrIndexInTreeIndex;
-                    }
-
-                   // Check if it fulfills the conditions
-                   switch (conditionUsedForIndexJoin.getExprType()) {
-                   case Condition.LESSTHAN:
-                       if (Tuple.compareTuples(
-                           leftTuple, rightTuple, leftIndex, rightIndex) < 0)
-                       {
-                           tuplesList.add(innerTuple);
-                       }
-                       break;
-                   case Condition.GREATERTHAN:
-                       if (Tuple.compareTuples(
-                           leftTuple, rightTuple, leftIndex, rightIndex) > 0)
-                       {
-                           tuplesList.add(innerTuple);
-                       }
-                       break;
-                   case Condition.LTOE:
-                       if (Tuple.compareTuples(
-                           leftTuple, rightTuple, leftIndex, rightIndex) <= 0)
-                       {
-                           tuplesList.add(innerTuple);
-                       }
-                       break;
-                   case Condition.GTOE:
-                       if (Tuple.compareTuples(
-                           leftTuple, rightTuple, leftIndex, rightIndex) >= 0)
-                       {
-                           tuplesList.add(innerTuple);
-                       }
-                       break;
-                   default:
-                       System.out.println("Unable to get match on this condition expr type");
-                       System.exit(1);
-                   }
-               } catch (EOFException eof) {
-                   break;
-               } catch (IOException ioe) {
-                   System.exit(1);
-               }
-            }
-        }
-
-        return tuplesList;
     }
 
     /**
@@ -492,7 +526,7 @@ public class IndexNestedJoin extends Join {
 
     /**
      * Setup the operator for an index nested join
-     * We read in the index if it exists and check for a condition we can do the index nested join on
+     * We read in the index if it exists and check for a condition we can do the index nested join
      */
     private void setup() {
         List<Attribute> leftConditions = new ArrayList<>();
@@ -507,6 +541,11 @@ public class IndexNestedJoin extends Join {
         // If no equality condition to sort by, use random inequality condition
         if (leftConditions.isEmpty()) {
             for (Condition cond: conditionList) {
+                if (cond.getExprType() == Condition.NOTEQUAL) {
+                    // Not equal is not worth handling using index nested join
+                    continue;
+                }
+
                 leftConditions.add(cond.getLhs());
                 rightConditions.add((Attribute) cond.getRhs());
             }
@@ -550,7 +589,8 @@ public class IndexNestedJoin extends Join {
         if (conditionUsedForIndexJoin != null) {
             try {
                 ObjectInputStream ins = new ObjectInputStream(new FileInputStream(indexPath));
-                index = (BPlusTree<BPlusTreeKey, String>) ins.readObject();
+                index = (BPlusTree<BPlusTreeKey, Long>) ins.readObject();
+                setupReadFileChannel(indexPath);
             } catch (IOException ioe) {
                 System.out.println("Cannot find index file in index nested join");
                 System.exit(1);
@@ -558,6 +598,25 @@ public class IndexNestedJoin extends Join {
                 System.out.println("Class not found in index nested join");
                 System.exit(1);
             }
+        }
+    }
+
+    /**
+     * Sets up the readFileChannel for the random access file.
+     */
+    private void setupReadFileChannel(String indexPath) {
+        try {
+            String[] splitIndexPath = indexPath.split("/");
+            String rafname = splitIndexPath[splitIndexPath.length - 1];
+
+            // We once again assume that this program is being called from the /testcases/ path
+            fc = new RandomAccessFile(rafname + ".tbli", "r").getChannel();
+            fc.force(true);
+
+        } catch (FileNotFoundException fofe) {
+            System.exit(1);
+        } catch (IOException ioe) {
+            System.exit(1);
         }
     }
 

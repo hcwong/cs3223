@@ -45,6 +45,9 @@ public class BPlusTree<K extends Comparable<? super K>, V> implements Serializab
     public K firstLeafKey;
     public K lastLeafKey;
 
+    /** Helps us check how large a tuple's serialization is in bytes*/
+    public int serializedValueLength;
+
     public BPlusTree() {
         this(DEFAULT_BRANCHING_FACTOR);
     }

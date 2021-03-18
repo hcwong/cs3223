@@ -9,7 +9,6 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import qp.algorithms.ExternalSort;
-import qp.optimizer.BufferManager;
 import qp.utils.Attribute;
 import qp.utils.Batch;
 import qp.utils.Schema;
@@ -22,20 +21,26 @@ public class Orderby extends Operator {
     boolean isAsc;
     String filename;
     boolean eos;
+    int numBuff;
     ObjectInputStream is;
 
     static int filenum = 0;
 
-    public Orderby(Operator base, ArrayList<Attribute> as, boolean isAsc, int type) {
+    public Orderby(Operator base, ArrayList<Attribute> as, boolean isAsc, int type, int numBuff) {
         super(type);
         this.base = base;
         this.attrToSortBy = as;
         this.isAsc = isAsc;
         this.eos = false;
+        this.numBuff = numBuff;
     }
 
     public Operator getBase() {
         return base;
+    }
+
+    public void setBase(Operator base) {
+        this.base = base;
     }
 
     public Schema getSchema() {
@@ -51,6 +56,9 @@ public class Orderby extends Operator {
         int tuplesize = schema.getTupleSize();
         batchsize = Batch.getPageSize() / tuplesize;
 
+        if (base instanceof NestedJoin) {
+            System.out.println("1");
+        }
         if (!base.open()) return false;
 
         // We materalize the result and sort it
@@ -128,7 +136,7 @@ public class Orderby extends Operator {
         ArrayList<Attribute> newattr = new ArrayList<>();
         for (int i = 0; i < attrToSortBy.size(); i++)
             newattr.add((Attribute) attrToSortBy.get(i).clone());
-        Orderby newOrderby = new Orderby(newbase, newattr, this.isAsc, optype);
+        Orderby newOrderby = new Orderby(newbase, newattr, isAsc, optype, numBuff);
         newOrderby.setSchema((Schema) newbase.getSchema().clone());
         return newOrderby;
     }

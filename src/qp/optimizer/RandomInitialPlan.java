@@ -192,10 +192,11 @@ public class RandomInitialPlan {
 
     public void createOrderByOp() {
         Operator base = root;
+        int numBuff = BufferManager.getNumBuffer();
 
         if (sqlquery.getOrderByList().size() > 0) {
              root = new Orderby(base, sqlquery.getOrderByList(),
-                 sqlquery.getIsAsc(), OpType.ORDERBY);
+                 sqlquery.getIsAsc(), OpType.ORDERBY, numBuff);
              root.setSchema(base.getSchema());
         }
     }

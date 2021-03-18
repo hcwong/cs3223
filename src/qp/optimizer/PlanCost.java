@@ -5,17 +5,23 @@
 
 package qp.optimizer;
 
-import qp.operators.*;
-import qp.utils.Attribute;
-import qp.utils.Batch;
-import qp.utils.Condition;
-import qp.utils.Schema;
-
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.StringTokenizer;
+import qp.operators.Join;
+import qp.operators.JoinType;
+import qp.operators.OpType;
+import qp.operators.Operator;
+import qp.operators.Orderby;
+import qp.operators.Project;
+import qp.operators.Scan;
+import qp.operators.Select;
+import qp.utils.Attribute;
+import qp.utils.Batch;
+import qp.utils.Condition;
+import qp.utils.Schema;
 
 public class PlanCost {
 
@@ -164,6 +170,10 @@ public class PlanCost {
             case JoinType.INDEXJOIN:
                 joincost = Math.max(leftpages, rightpages);
                 break;
+            case JoinType.BLOCKNESTED:
+                long leftcost = leftpages + leftpages / numbuff * rightpages;
+                long rightcost = rightpages + rightpages / numbuff * leftpages;
+                return Math.min(leftcost, rightcost);
             default:
                 System.out.println("join type is not supported");
                 return 0;
