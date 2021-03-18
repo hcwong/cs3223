@@ -9,10 +9,10 @@ import qp.utils.Condition;
 import qp.utils.Tuple;
 
 public class SortMergeJoin extends Join {
-    private int batchSize;
+    private int batchsize;
 
-    private int leftIndex;
-    private int rightIndex;
+    private ArrayList<Integer> leftindex;
+    private ArrayList<Integer> rightindex;
 
     private Batch leftBatch;
     private Batch rightBatch;
@@ -33,8 +33,7 @@ public class SortMergeJoin extends Join {
     private boolean isEndedLeft = false;
     private boolean isEndedRight = false;
 
-    // Type of the join attribute.
-    private int attrType;
+
 
 
     public SortMergeJoin(Join jn) {
@@ -52,15 +51,18 @@ public class SortMergeJoin extends Join {
         right.open();
 
         /** select number of tuples per batch **/
-        int tupleSize = schema.getTupleSize();
-        batchSize = Batch.getPageSize() / tupleSize;
+        int tuplesize = schema.getTupleSize();
+        batchsize = Batch.getPageSize() / tuplesize;
 
-        Attribute leftAttr = getCondition().getLhs();
-        Attribute rightAttr = (Attribute) getCondition().getRhs();
-        leftIndex = left.getSchema().indexOf(leftAttr);
-        rightIndex = right.getSchema().indexOf(rightAttr);
-
-        attrType = left.getSchema().typeOf(leftAttr);
+        /** find indices attributes of join conditions **/
+        leftindex = new ArrayList<>();
+        rightindex = new ArrayList<>();
+        for (Condition con : conditionList) {
+            Attribute leftattr = con.getLhs();
+            Attribute rightattr = (Attribute) con.getRhs();
+            leftindex.add(left.getSchema().indexOf(leftattr));
+            rightindex.add(right.getSchema().indexOf(rightattr));
+        }
 
         return super.open();
     }
@@ -101,9 +103,9 @@ public class SortMergeJoin extends Join {
             rightTuple = rightPartition.get(rightPartitionIndex);
         }
 
-        Batch outBatch = new Batch(batchSize);
+        Batch outBatch = new Batch(batchsize);
         while (!outBatch.isFull()) {
-            int diff = Tuple.compareTuples(leftTuple, rightTuple, leftIndex, rightIndex);
+            int diff = Tuple.compareTuples(leftTuple, rightTuple, leftindex, rightindex);
             if (diff == 0) {
                 outBatch.add(leftTuple.joinWith(rightTuple));
                 if (rightPartitionIndex < rightPartition.size() - 1) {
@@ -115,7 +117,7 @@ public class SortMergeJoin extends Join {
                         isEndedLeft = true;
                         break;
                     }
-                    diff = Tuple.compareTuples(leftTuple, nextLeftTuple, leftIndex, leftIndex);
+                    diff = Tuple.compareTuples(leftTuple, nextLeftTuple, leftindex, leftindex);
                     leftTuple = nextLeftTuple;
 
                     if (diff == 0) {
@@ -169,7 +171,7 @@ public class SortMergeJoin extends Join {
             if (nextRightTuple == null) {
                 break;
             }
-            diff = Tuple.compareTuples(partition.get(0), nextRightTuple, rightIndex, rightIndex);
+            diff = Tuple.compareTuples(partition.get(0), nextRightTuple, rightindex, rightindex);
         }
 
         return partition;
