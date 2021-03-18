@@ -41,12 +41,14 @@ public class SortMergeJoin extends Join {
 
     ObjectInputStream rightIns;
     ObjectInputStream leftIns;
+    private boolean eos;
 
     public SortMergeJoin(Join jn) {
         super(jn.getLeft(), jn.getRight(), jn.getCondition(), jn.getOpType());
         schema = jn.getSchema();
         jointype = jn.getJoinType();
         numBuff = jn.getNumBuff();
+        eos = false;
     }
 
 
@@ -116,7 +118,7 @@ public class SortMergeJoin extends Join {
         }
 
         try {
-            ObjectInputStream leftIns = new ObjectInputStream(new FileInputStream(sortedLeftFilePath));
+            leftIns = new ObjectInputStream(new FileInputStream(sortedLeftFilePath));
         } catch (IOException ioe) {
             System.exit(1);
         }
@@ -130,7 +132,7 @@ public class SortMergeJoin extends Join {
         }
 
         try {
-            ObjectInputStream rightIns = new ObjectInputStream(new FileInputStream(sortedRightFilePath));
+            rightIns = new ObjectInputStream(new FileInputStream(sortedRightFilePath));
         } catch (IOException ioe) {
             System.exit(1);
         }
@@ -148,7 +150,7 @@ public class SortMergeJoin extends Join {
 
         // To handle the 1st run.
         if (leftBatch == null) {
-            leftBatch = left.next();
+            leftBatch = getNextBatch(leftIns);
             if (leftBatch == null) {
                 isEndedLeft = true;
                 return null;
@@ -160,7 +162,7 @@ public class SortMergeJoin extends Join {
             }
         }
         if (rightBatch == null) {
-            rightBatch = right.next();
+            rightBatch = getNextBatch(rightIns);
             if (rightBatch == null) {
                 isEndedRight = true;
                 return null;
@@ -254,7 +256,7 @@ public class SortMergeJoin extends Join {
             isEndedLeft = true;
             return null;
         } else if (leftCursor == leftBatch.size()) {
-            leftBatch = left.next();
+            leftBatch = getNextBatch(leftIns);
             leftCursor = 0;
         }
 
@@ -272,7 +274,7 @@ public class SortMergeJoin extends Join {
         if (rightBatch == null) {
             return null;
         } else if (rightCursor == rightBatch.size()) {
-            rightBatch = right.next();
+            rightBatch = getNextBatch(rightIns);
             rightCursor = 0;
         }
 
@@ -285,19 +287,26 @@ public class SortMergeJoin extends Join {
         return next;
     }
 
-    private Batch getNextBatch(ObjectInputStream is) {
-        Batch temp = new Batch(batchsize);
+    public Batch getNextBatch(ObjectInputStream is) {
+        if (eos) {
+            return null;
+        }
+
+        Batch outbatch = new Batch(batchsize);
         for (int i = 0; i < batchsize; i++) {
             try {
                 Tuple t = ExternalSort.readTuple(is);
-                temp.add(t);
+                outbatch.add(t);
+            } catch (EOFException eoe) {
+                eos = true;
+                break;
             } catch (IOException ioe) {
-                System.out.println("Cannot read tuples from sorted file ");
+                System.out.println("Cannot read from sorted file in order by");
                 System.exit(1) ;
             }
         }
-        return temp;
 
+        return outbatch;
     }
 
     @Override
