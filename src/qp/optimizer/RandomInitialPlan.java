@@ -193,7 +193,7 @@ public class RandomInitialPlan {
 
         if (sqlquery.getOrderByList().size() > 0) {
              root = new Orderby(base, sqlquery.getOrderByList(),
-                 sqlquery.getIsAsc(), OpType.ORDERBY, numBuff);
+                 sqlquery.getIsAsc(), OpType.ORDERBY);
              root.setSchema(base.getSchema());
         }
     }
@@ -211,9 +211,10 @@ public class RandomInitialPlan {
     private void createSortDistinctOp() {
         Operator base = root;
         int numBuff = BufferManager.getNumBuffer();
+        int buffPerJoin = BufferManager.getBuffersPerJoin();
 
         if (sqlquery.isDistinct()) {
-            root = new SortDistinct(base, OpType.SORTDISTINCT, numBuff);
+            root = new SortDistinct(base, OpType.SORTDISTINCT);
             root.setSchema(base.getSchema());
         }
     }

@@ -26,13 +26,12 @@ public class Orderby extends Operator {
 
     static int filenum = 0;
 
-    public Orderby(Operator base, ArrayList<Attribute> as, boolean isAsc, int type, int numBuff) {
+    public Orderby(Operator base, ArrayList<Attribute> as, boolean isAsc, int type) {
         super(type);
         this.base = base;
         this.attrToSortBy = as;
         this.isAsc = isAsc;
         this.eos = false;
-        this.numBuff = numBuff;
     }
 
     public Operator getBase() {
@@ -49,6 +48,10 @@ public class Orderby extends Operator {
 
     public void setSchema(Schema schm) {
         this.schema = schm;
+    }
+
+    public void setNumBuff(int numBuff) {
+        this.numBuff = numBuff;
     }
 
     public boolean open() {
@@ -132,8 +135,9 @@ public class Orderby extends Operator {
         ArrayList<Attribute> newattr = new ArrayList<>();
         for (int i = 0; i < attrToSortBy.size(); i++)
             newattr.add((Attribute) attrToSortBy.get(i).clone());
-        Orderby newOrderby = new Orderby(newbase, newattr, isAsc, optype, numBuff);
+        Orderby newOrderby = new Orderby(newbase, newattr, isAsc, optype);
         newOrderby.setSchema((Schema) newbase.getSchema().clone());
+        newOrderby.setNumBuff(numBuff);
         return newOrderby;
     }
 }

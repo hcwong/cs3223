@@ -79,12 +79,16 @@ public class RandomOptimizer {
             ((Project) node).setBase(base);
             return node;
         } else if (node.getOpType() == OpType.ORDERBY) {
+            int totalBuff = BufferManager.getNumBuffer();
             Operator base = makeExecPlan(((Orderby) node).getBase());
             ((Orderby) node).setBase(base);
+            ((Orderby) node).setNumBuff(totalBuff);
             return node;
         } else if (node.getOpType() == OpType.SORTDISTINCT) {
+            int totalBuff = BufferManager.getNumBuffer();
             Operator base = makeExecPlan(((SortDistinct) node).getBase());
             ((SortDistinct) node).setBase(base);
+            ((SortDistinct) node).setNumBuff(totalBuff);
             return node;
         } else {
             return node;
@@ -414,7 +418,7 @@ public class RandomOptimizer {
             Operator base = ((Orderby) node).getBase();
             modifySchema(base);
         } else if (node.getOpType() == OpType.SORTDISTINCT) {
-            Operator base = ((Orderby) node).getBase();
+            Operator base = ((SortDistinct) node).getBase();
             modifySchema(base);
         }
     }

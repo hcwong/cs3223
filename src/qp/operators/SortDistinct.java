@@ -23,11 +23,10 @@ public class SortDistinct extends Operator {
 
     static int filenum = 0;
 
-    public SortDistinct(Operator base,  int type, int numBuff) {
+    public SortDistinct(Operator base,  int type) {
         super(type);
         this.base = base;
         this.eos = false;
-        this.numBuff = numBuff;
     }
 
     public Operator getBase() {
@@ -44,6 +43,10 @@ public class SortDistinct extends Operator {
 
     public void setSchema(Schema schm) {
         this.schema = schm;
+    }
+
+    public void setNumBuff(int numBuff) {
+        this.numBuff = numBuff;
     }
 
     public boolean open() {
@@ -78,7 +81,8 @@ public class SortDistinct extends Operator {
         try {
             sortedFilePath = externalsort.sort(filename, tuplesize, indexes, false);
         } catch (IOException ioe) {
-            System.out.println("Failed to sort file during order by");
+            ioe.printStackTrace();
+            System.out.println("Failed to sort file during distinct");
             System.exit(1);
         }
 
@@ -130,8 +134,9 @@ public class SortDistinct extends Operator {
 
     public Object clone() {
         Operator newbase = (Operator) base.clone();
-        SortDistinct newSortDistinct = new SortDistinct(newbase, optype, numBuff);
+        SortDistinct newSortDistinct = new SortDistinct(newbase, optype);
         newSortDistinct.setSchema((Schema) newbase.getSchema().clone());
+        newSortDistinct.setNumBuff(numBuff);
         return newSortDistinct;
     }
 }
