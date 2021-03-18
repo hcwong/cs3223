@@ -6,7 +6,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.nio.file.Paths;
@@ -16,7 +15,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.stream.Collectors;
 import qp.algorithms.ExternalSort;
-import qp.optimizer.BufferManager;
 import qp.utils.Attribute;
 import qp.utils.BPlusTree;
 import qp.utils.BPlusTreeKey;
@@ -75,7 +73,7 @@ public class IndexNestedJoin extends Join {
 
         // Make left batch the size of the number of buffers available for join operator - 2
         // -2 because we do not count the buffer for the inner file and the output buffer
-        outerBatch = new Batch(batchsize * (BufferManager.getBuffersPerJoin() - 2));
+        outerBatch = new Batch(batchsize * (numBuff - 2));
 
         /** find indices attributes of join conditions **/
         ArrayList<Integer> leftindex = new ArrayList<>();
