@@ -607,7 +607,7 @@ public class IndexNestedJoin extends Join {
     private void setupReadFileChannel(String indexPath) {
         try {
             String[] splitIndexPath = indexPath.split("/");
-            String rafname = splitIndexPath[splitIndexPath.length - 1].split("-")[0];
+            String rafname = splitIndexPath[splitIndexPath.length - 1];
 
             // We once again assume that this program is being called from the /testcases/ path
             fc = new RandomAccessFile(rafname + ".tbli", "r").getChannel();

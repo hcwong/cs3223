@@ -50,12 +50,31 @@ public class BuildIndex {
         List<Integer> indexKeys = new ArrayList<>();
         for (int i = 5; i < args.length; i++)
             indexKeys.add(Integer.parseInt(args[i]));
+        int tupleSize = 0;
+
+        String currentAbsPath = Paths.get("").toAbsolutePath().toString();
+        String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
+        String keysString = "";
+        try {
+            ObjectInputStream schemaIns = new ObjectInputStream(new FileInputStream(mdPath));
+            Schema schema = (Schema) schemaIns.readObject();
+            keysString = indexKeys.stream().map(idx -> schema.getAttribute(idx).getColName())
+                .collect(Collectors.joining("-"));
+            tupleSize = schema.getTupleSize();
+        } catch (IOException ioe) {
+            System.exit(1);
+        } catch (ClassNotFoundException ce) {
+            System.exit(1);
+        }
 
         // Setup the Random Access File that will be written to
         FileChannel fc = null;
         try {
             // A random access table is just the tbl file with an i on the file type.
-            fc = new RandomAccessFile(new File(tblPath + "i"), "rw").getChannel();
+            fc = new RandomAccessFile(new File(
+                String.format("testcases/%s-%s.tbli", tblName, keysString)
+            ), "rw")
+                .getChannel();
             fc.force(true);
         } catch (FileNotFoundException fofe) {
             System.out.println("Cannot find file");
@@ -66,15 +85,8 @@ public class BuildIndex {
 
 
         // Save all files in the a folder called indexes at project root
-        String currentAbsPath = Paths.get("").toAbsolutePath().toString();
         try {
-            String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
-            ObjectInputStream schemaIns = new ObjectInputStream(new FileInputStream(mdPath));
-            Schema schema = (Schema) schemaIns.readObject();
-            int tupleSize = schema.getTupleSize();
             // Turn all the keys into a string
-            String keysString = indexKeys.stream().map(idx -> schema.getAttribute(idx).getColName())
-                .collect(Collectors.joining("-"));
             String indexPath = String.format("%s/indexes/%s-%s", currentAbsPath, tblName, keysString);
             BPlusTree<BPlusTreeKey, Long> index = build(
                 order, tblPath, indexKeys, pageSize,
@@ -92,9 +104,6 @@ public class BuildIndex {
             fc.close();
         } catch (IOException ioe) {
             System.out.println("Failed to write index to output file");
-            System.exit(1);
-        } catch (ClassNotFoundException ce) {
-            System.out.println("Cannot read schema");
             System.exit(1);
         }
     }
