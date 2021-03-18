@@ -1,15 +1,24 @@
 package utils;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.util.RandomAccess;
+import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 import qp.algorithms.ExternalSort;
 import qp.utils.BPlusTree;
@@ -41,20 +50,47 @@ public class BuildIndex {
         List<Integer> indexKeys = new ArrayList<>();
         for (int i = 5; i < args.length; i++)
             indexKeys.add(Integer.parseInt(args[i]));
+        int tupleSize = 0;
 
-        // Save all files in the a folder called indexes at project root
         String currentAbsPath = Paths.get("").toAbsolutePath().toString();
+        String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
+        String keysString = "";
         try {
-            String mdPath = String.format("%s.md", tblPath.split("[.]", 0)[0]);
             ObjectInputStream schemaIns = new ObjectInputStream(new FileInputStream(mdPath));
             Schema schema = (Schema) schemaIns.readObject();
-            int tupleSize = schema.getTupleSize();
-            String keysString = indexKeys.stream().map(idx -> schema.getAttribute(idx).getColName())
+            keysString = indexKeys.stream().map(idx -> schema.getAttribute(idx).getColName())
                 .collect(Collectors.joining("-"));
+            tupleSize = schema.getTupleSize();
+        } catch (IOException ioe) {
+            System.exit(1);
+        } catch (ClassNotFoundException ce) {
+            System.exit(1);
+        }
+
+        // Setup the Random Access File that will be written to
+        FileChannel fc = null;
+        try {
+            // A random access table is just the tbl file with an i on the file type.
+            fc = new RandomAccessFile(new File(
+                String.format("testcases/%s-%s.tbli", tblName, keysString)
+            ), "rw")
+                .getChannel();
+            fc.force(true);
+        } catch (FileNotFoundException fofe) {
+            System.out.println("Cannot find file");
+            System.exit(1);
+        } catch (IOException ioe) {
+            System.exit(1);
+        }
+
+
+        // Save all files in the a folder called indexes at project root
+        try {
+            // Turn all the keys into a string
             String indexPath = String.format("%s/indexes/%s-%s", currentAbsPath, tblName, keysString);
-            BPlusTree<BPlusTreeKey, String> index = build(
+            BPlusTree<BPlusTreeKey, Long> index = build(
                 order, tblPath, indexKeys, pageSize,
-                numberOfBuffers, mdPath, tupleSize, indexPath);
+                numberOfBuffers, mdPath, tupleSize, fc);
 
             // Set the first and last keys here for easy reference later
             index.setFirstKey();
@@ -65,19 +101,17 @@ public class BuildIndex {
             );
             outs.writeObject(index);
             outs.close();
+            fc.close();
         } catch (IOException ioe) {
             System.out.println("Failed to write index to output file");
-            System.exit(1);
-        } catch (ClassNotFoundException ce) {
-            System.out.println("Cannot read schema");
             System.exit(1);
         }
     }
 
-    public static BPlusTree<BPlusTreeKey, String> build(
+    public static BPlusTree<BPlusTreeKey, Long> build(
         int order, String tblPath, List<Integer> indexKeys,
         int pageSize, int numberOfBuffers, String mdPath, int tupleSize,
-        String indexPath
+        FileChannel fc
     ) {
         String sortedTblPath = "";
         // We assume the .md file and the .tbl file are in the same directory.
@@ -104,53 +138,27 @@ public class BuildIndex {
         assert(batchSize > 2);
 
         boolean eos = false;
-        BPlusTree<BPlusTreeKey, String> index = new BPlusTree<>(order);
-        List<Tuple> batch = new ArrayList<>();
-        int batchCount = 0;
+        BPlusTree<BPlusTreeKey, Long> index = new BPlusTree<>(order);
 
         while (!eos) {
-           try {
-               for (int i = 0; i < batchSize; i++) {
-                   // TODO: Abstract out read tuple to somewhere more appropriate.
-                   Tuple tuple = ExternalSort.readTuple(ois);
-                   batch.add(tuple);
-               }
+            try {
+                Tuple tuple = ExternalSort.readTuple(ois);
+                byte[] tupleBytes = BuildIndex.serialize(tuple);
+                index.serializedValueLength = tupleBytes.length;
 
-               String batchFile = String.format("%s-%d", indexPath, batchCount);
-               ObjectOutputStream batchOos = new ObjectOutputStream(new FileOutputStream(batchFile));
-               for (Tuple tuple: batch) {
-                   BPlusTreeKey key = buildKey(tuple, indexKeys);
-                   // Do not insert into the index if it already exists
-                   if (index.search(key) == null)
-                       index.insert(key, batchFile);
-
-                   batchOos.writeObject(tuple);
-               }
-               batch.clear();
-               batchCount++;
-           } catch (EOFException e) {
-               eos = true;
-           } catch (IOException ioe) {
-               System.out.println("IO Exception when reading tuples");
-               System.exit(1);
-           }
-        }
-
-        // Insert the last batch
-        String batchFile = String.format("%s-%d", indexPath, batchCount);
-        try {
-            ObjectOutputStream batchOos = new ObjectOutputStream(new FileOutputStream(batchFile));
-            for (Tuple tuple: batch) {
+                // Now we write to the random access file and store the offset in BPlusTree
+                long offset = BuildIndex.addTuple(fc, tupleBytes);
                 BPlusTreeKey key = buildKey(tuple, indexKeys);
-                // Do not insert into the index if it already exists
-                if (index.search(key) == null)
-                    index.insert(key, batchFile);
 
-                batchOos.writeObject(tuple);
+                if (index.search(key) == null)
+                    index.insert(key, offset);
+
+            } catch (EOFException eof) {
+                eos = true;
+            } catch (IOException ioe) {
+                System.out.println("Failed to read from tbl in BuildIndex");
+                System.exit(1);
             }
-        } catch (IOException ioe) {
-            System.out.println("Failed to write to batch");
-            System.exit(1);
         }
 
         try {
@@ -174,5 +182,61 @@ public class BuildIndex {
             keys.add(tuple.data().get(i));
 
         return new BPlusTreeKey(keys);
+    }
+
+    public static byte[] serialize(Tuple t) {
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ObjectOutputStream oos = new ObjectOutputStream(baos);
+            oos.writeObject(t);
+            oos.flush();
+            return baos.toByteArray();
+        } catch (IOException ioe) {
+            System.exit(1);
+        }
+        return null;
+    }
+
+    public static Tuple deserialize(byte[] byteArray) {
+        try {
+           ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(byteArray));
+           Tuple t = (Tuple) ois.readObject();
+           return t;
+        } catch (IOException ioe) {
+            System.exit(1);
+        } catch (ClassNotFoundException coe) {
+            System.exit(1);
+        }
+        return null;
+    }
+
+    public static long addTuple(FileChannel fc, byte[] tupleBytes) {
+        try {
+            long byteOffset = fc.size();
+            fc.position(byteOffset);
+            fc.write(ByteBuffer.wrap(tupleBytes));
+            return byteOffset;
+        } catch (IOException ioe) {
+            System.exit(1);
+        }
+
+        return -1;
+    }
+
+    public static Tuple readTuple(FileChannel fc, long offset, int dataSize) {
+        try {
+            // Do not read pass the size of the file
+            if (offset >= fc.size()) {
+                return null;
+            }
+            byte[] buffer = new byte[dataSize];
+            fc.position(offset);
+            fc.read(ByteBuffer.wrap(buffer));
+            return BuildIndex.deserialize(buffer);
+        } catch (IOException ioe) {
+            System.exit(1);
+        }
+
+        return null;
     }
 }

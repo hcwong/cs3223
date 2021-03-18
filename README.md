@@ -21,7 +21,7 @@ do create that folder or there may be unexpected behaviour.
 ## Building an index
 
 Indexes are not built at runtime. Instead, the user has to build the indexes using the `BuildIndex` class.
-This class should also be run from project root.
+This class should also be run from project root. Do not run it from anywhere else.
 
 ```
 java utils.BuildIndex <tblpath> <tblname> <order> <pageSize> <numberOfBuffers> <pageSize> <numberOfBuffers> 
@@ -37,6 +37,13 @@ and `keyIndex` is 0, then we will create an index for `Flights.flno`.
 
 These indexes will be stored in the `/indexes` directory at project root. If you don't have the folder,
 please create it or unexpected behavior might occur.
+
+The index name is of the form `tablename-keysString`. So for the example above, the index produced will be
+`Flights-flno`. Interestingly, there will be another table produced also, this will be found in `testcases/`
+This table will be `Flights-flno.tbli`. The reason why is explained in our report.
+
+If you get a `NonWritableChannelException`, it probably means that the index file you are trying
+to create exists already.
 
 ## Changing the join type
 The join type used can be changed in the `RandomInitialPlan` file, under the `createJoinOp` function.
