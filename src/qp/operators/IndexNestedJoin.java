@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -47,6 +48,7 @@ public class IndexNestedJoin extends Join {
     private Condition conditionUsedForIndexJoin;  // Type of condition expr
     private BPlusTree<BPlusTreeKey, String> index;   // Index
     private int attrIndexInTreeIndex;             // The index of the attribute used for joining
+    ArrayList<Tuple> matchingTuples;
 
     static int filenum = 0;         // Unique filename
 
@@ -108,7 +110,8 @@ public class IndexNestedJoin extends Join {
         if (!right.open()) {
             return false;
         } else {
-            materializeRf();
+            if (conditionUsedForIndexJoin == null)
+                materializeRf();
         }
         if (left.open())
             return true;
@@ -154,7 +157,7 @@ public class IndexNestedJoin extends Join {
     private Batch indexJoin(Batch outbatch) {
         // We iterate until the end of the outer file
         while (!eoso || ocurs < outerBatch.size()) {
-            while (!outerBatch.isFull()) {
+            while (outerBatch.capacity() - batchsize > outerBatch.size()  && !eoso) {
                 Batch nextBatch = outer.next();
                 if (nextBatch == null) {
                     eoso = true;
@@ -166,16 +169,19 @@ public class IndexNestedJoin extends Join {
             // Need to use indexes here
             while (ocurs < outerBatch.size()) {
                 Tuple outerTuple = outerBatch.get(ocurs);
-                ArrayList<Tuple> matchingTuples = null;
 
-                if (conditionUsedForIndexJoin.getExprType() == Condition.EQUAL) {
-                    matchingTuples = getMatchOnEquality(outerTuple);
-                } else {
-                    matchingTuples = getMatchOnInequality(outerTuple);
+                if (matchingTuples == null) {
+                    long matchStart = System.nanoTime();
+                    if (conditionUsedForIndexJoin.getExprType() == Condition.EQUAL) {
+                        matchingTuples = getMatchOnEquality(outerTuple);
+                    } else {
+                        matchingTuples = getMatchOnInequality(outerTuple);
+                    }
                 }
 
                 // Matching tuple not found
-                if (matchingTuples == null) {
+                if (matchingTuples.size() == 0) {
+                    ocurs++;
                     continue;
                 }
 
@@ -200,6 +206,7 @@ public class IndexNestedJoin extends Join {
                     }
                 }
                 matchingTuplesIndex = 0;
+                matchingTuples = null;
                 // ocurs can only be incremented here
                 ocurs++;
             }
@@ -213,7 +220,7 @@ public class IndexNestedJoin extends Join {
             ocurs = 0;
         }
 
-        return null;
+        return outbatch;
     }
 
     private ArrayList<Tuple> getMatchOnEquality(Tuple outerTuple) {
@@ -223,11 +230,11 @@ public class IndexNestedJoin extends Join {
         keyValues.add(outerTuple.dataAt(outerTupleIndex));
         BPlusTreeKey key = new BPlusTreeKey(keyValues);
         String batchPath = index.search(key);
+        ArrayList<Tuple> innerTuplesToJoin = new ArrayList<>();
 
         if (batchPath == null)
-            return null;
+            return innerTuplesToJoin;
 
-        ArrayList<Tuple> innerTuplesToJoin = new ArrayList<>();
         String[] paths = batchPath.split("-");
 
         boolean continueReading = true;
@@ -276,6 +283,13 @@ public class IndexNestedJoin extends Join {
                     System.exit(1);
                 }
             }
+            try {
+                ins.close();
+                fins.close();
+            } catch (IOException ioe) {
+                System.exit(1);
+            }
+
         }
 
         return innerTuplesToJoin;
