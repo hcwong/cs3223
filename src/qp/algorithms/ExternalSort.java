@@ -273,7 +273,7 @@ public class ExternalSort {
         if (initialRunCount == 1)
             return currentAbsPath + "/" + this.id.toString() + "-0-0.tblo";
 
-        return merge(initialRunCount, indexes);
+        return merge(initialRunCount, indexes, isReverse);
     }
 
     /**

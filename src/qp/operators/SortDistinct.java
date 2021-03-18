@@ -9,16 +9,13 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import qp.algorithms.ExternalSort;
-import qp.utils.Attribute;
 import qp.utils.Batch;
 import qp.utils.Schema;
 import qp.utils.Tuple;
 
-public class Orderby extends Operator {
+public class SortDistinct extends Operator {
     Operator base;
-    ArrayList<Attribute> attrToSortBy;
     int batchsize;
-    boolean isAsc;
     String filename;
     boolean eos;
     int numBuff;
@@ -26,11 +23,9 @@ public class Orderby extends Operator {
 
     static int filenum = 0;
 
-    public Orderby(Operator base, ArrayList<Attribute> as, boolean isAsc, int type) {
+    public SortDistinct(Operator base,  int type) {
         super(type);
         this.base = base;
-        this.attrToSortBy = as;
-        this.isAsc = isAsc;
         this.eos = false;
     }
 
@@ -63,7 +58,7 @@ public class Orderby extends Operator {
 
         // We materalize the result and sort it
         filenum++;
-        filename = "Orderbytemp-" + String.valueOf(filenum);
+        filename = "SortDistincttemp-" + String.valueOf(filenum);
         Batch nextPage;
 
         try {
@@ -78,17 +73,16 @@ public class Orderby extends Operator {
             System.exit(1);
         }
 
-        ArrayList<Attribute> schemaAttrs = schema.getAttList();
         ArrayList<Integer> indexes = new ArrayList<>();
         ExternalSort externalsort = new ExternalSort(Batch.getPageSize(), numBuff);
         String sortedFilePath = "";
-        for (Attribute a : attrToSortBy) {
-            indexes.add(schemaAttrs.indexOf(a));
-        }
+        // Just sort it on some random attribute
+        indexes.add(0);
         try {
-            sortedFilePath = externalsort.sort(filename, tuplesize, indexes, !this.isAsc);
+            sortedFilePath = externalsort.sort(filename, tuplesize, indexes, false);
         } catch (IOException ioe) {
-            System.out.println("Failed to sort file during order by");
+            ioe.printStackTrace();
+            System.out.println("Failed to sort file during distinct");
             System.exit(1);
         }
 
@@ -107,13 +101,21 @@ public class Orderby extends Operator {
         }
 
         Batch outbatch = new Batch(batchsize);
-        for (int i = 0; i < batchsize; i++) {
+
+        Integer hashOfLastTuple = null;
+        while (!outbatch.isFull() && !eos) {
             try {
                 Tuple t = ExternalSort.readTuple(is);
-                outbatch.add(t);
+                int hash = t.hashCode();
+                // Because it is a sorted file, all identical tuples will be adjacent to one another
+                // We just discard a tuple if it has the same hashcode as its immediate preceeding
+                // tuples.
+                if (hashOfLastTuple == null || hashOfLastTuple != hash) {
+                    hashOfLastTuple = hash;
+                    outbatch.add(t);
+                }
             } catch (EOFException eoe) {
                 eos = true;
-                break;
             } catch (IOException ioe) {
                 System.out.println("Cannot read from sorted file in order by");
                 System.exit(1) ;
@@ -132,12 +134,9 @@ public class Orderby extends Operator {
 
     public Object clone() {
         Operator newbase = (Operator) base.clone();
-        ArrayList<Attribute> newattr = new ArrayList<>();
-        for (int i = 0; i < attrToSortBy.size(); i++)
-            newattr.add((Attribute) attrToSortBy.get(i).clone());
-        Orderby newOrderby = new Orderby(newbase, newattr, isAsc, optype);
-        newOrderby.setSchema((Schema) newbase.getSchema().clone());
-        newOrderby.setNumBuff(numBuff);
-        return newOrderby;
+        SortDistinct newSortDistinct = new SortDistinct(newbase, optype);
+        newSortDistinct.setSchema((Schema) newbase.getSchema().clone());
+        newSortDistinct.setNumBuff(numBuff);
+        return newSortDistinct;
     }
 }
