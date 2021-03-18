@@ -204,6 +204,160 @@ public class ExternalSort {
     }
 
     /**
+     * Returns a string which represents absolute path to merged file.
+     * This is an overloaded method in the event the tuple size is provided
+     * This function is usually called directly by the code and not run as an executable
+     * @param tblpath String
+     * @param tupleSize int
+     * @param indexes List<Integer>
+     * @param isReverse boolean which indicates whether the sorting is reversed
+     * @return String
+     * @throws IOException
+     */
+    public String sort(String tblpath, int tupleSize, List<Integer> indexes, boolean isReverse)
+        throws IOException
+    {
+        int batchSize = (int) Math.floor(pageSize / tupleSize);
+
+        if (pageSize < tupleSize) {
+            System.out.println("Page size smaller than tuple size. Error");
+            System.exit(1);
+        }
+
+        ObjectInputStream tableIns = null;
+
+        // First Step: Partition files
+        try {
+            tableIns = new ObjectInputStream(new FileInputStream(tblpath));
+        } catch (Exception e) {
+            System.err.println(" Error reading file during sort");
+            return "";
+        }
+
+        boolean eos = false;
+        int initialRunSize = batchSize * numberOfBuffers;
+        int initialRunCount = 0;
+        while (!eos) {
+            List<Tuple> outbatchTuplesList = new ArrayList<>();
+
+            // While the batch is not full and eos is not reached, write to outfile
+            while (!eos && outbatchTuplesList.size() != initialRunSize) {
+                try {
+                    Tuple data = readTuple(tableIns);
+                    outbatchTuplesList.add(data);
+                } catch (EOFException eof) {
+                    eos = true;
+                }
+            }
+
+            // If there are tuples in the list, sort and write it to disk
+            if (!outbatchTuplesList.isEmpty()) {
+                Collections.sort(outbatchTuplesList, new TupleComparator(indexes));
+                // Reverse it if in descending order
+                if (isReverse)
+                    Collections.reverse(outbatchTuplesList);
+
+                ObjectOutputStream outs =
+                    new ObjectOutputStream(new FileOutputStream(
+                        currentAbsPath + "/" + this.id.toString()
+                            + "-0-" + initialRunCount + ".tblo"));
+                for (Tuple t: outbatchTuplesList)
+                    outs.writeObject(t);
+
+                initialRunCount++;
+                outs.close();
+            }
+        }
+
+        tableIns.close();
+        if (initialRunCount == 1)
+            return currentAbsPath + "/" + this.id.toString() + "-0-0.tblo";
+
+        return merge(initialRunCount, indexes);
+    }
+
+    /**
+     * This is like the earlier merge function, but it supports reverse and the sorted file is
+     * in the same directory as the current absolute path.
+     * @param initialRunCount
+     * @param indexes
+     * @param isReverse
+     * @return
+     * @throws IOException
+     */
+    public String merge(int initialRunCount, List<Integer> indexes, boolean isReverse) throws IOException {
+        int runCount = initialRunCount;
+        int buffersForRuns = numberOfBuffers - 1;
+        int runId = 1;
+        int nextRunCount = 0;
+
+        // The outer loop runs until we only have 1 run left - ie the sorted and merged result/final run.
+        while (runCount > 1) {
+            // This is for every pass of the sort-merge loop
+            while (runCount > 0) {
+                List<ObjectInputStream> inputStreams = new ArrayList<>(numberOfBuffers);
+                List<Boolean> inputStreamsEof = new ArrayList<>(numberOfBuffers);
+                // Using a priority queue will help reduce the k-way merge runtime
+                PriorityQueue<Tuple> pq =
+                    new PriorityQueue<>(buffersForRuns, new TupleComparator(indexes, isReverse));
+                HashMap<Tuple, Integer> tupleMap = new HashMap<>();
+                ObjectOutputStream outs =
+                    new ObjectOutputStream(new FileOutputStream(
+                        String.format("%s/%s-%d-%d.tblo", currentAbsPath,
+                            this.id.toString(), runId, nextRunCount)
+                    ));
+
+                // Open all the input streams to the previous runs
+                for (int i = 0; i < buffersForRuns && runCount > 0; i++, runCount--) {
+                    // We need to add nextRunCount * 10, else we will always be reading the
+                    // first 10 runs of every pass
+                    ObjectInputStream runInput = new ObjectInputStream(new FileInputStream(
+                        String.format("%s/%s-%d-%d.tblo", currentAbsPath,
+                            this.id.toString(), runId - 1, i + (nextRunCount * buffersForRuns))));
+                    inputStreams.add(runInput);
+                    inputStreamsEof.add(false);
+
+                    try {
+                        Tuple data = readTuple(runInput);
+                        pq.add(data);
+                        tupleMap.put(data, i);
+                    } catch (EOFException eof) {
+                        inputStreamsEof.set(i, true);
+                    }
+                }
+
+                // Now we merge all the results in
+                while (!(inputStreamsEof.stream().reduce(true, (a, b) -> a && b)) &&
+                    !pq.isEmpty()) {
+                    Tuple head = pq.poll();
+                    outs.writeObject(head);
+
+                    int streamIndexToRead = tupleMap.get(head);
+                    try {
+                        Tuple data = readTuple(inputStreams.get(streamIndexToRead));
+                        pq.add(data);
+                        tupleMap.put(data, streamIndexToRead);
+                    } catch (EOFException eof) {
+                        inputStreamsEof.set(streamIndexToRead, true);
+                    }
+                }
+
+                for (ObjectInputStream ins : inputStreams)
+                    ins.close();
+
+                outs.close();
+                nextRunCount++;
+            }
+
+            runCount = nextRunCount;
+            nextRunCount = 0;
+            runId++;
+        }
+
+        return String.format("%s/%s-%d-0.tblo", currentAbsPath, this.id.toString(), runId - 1);
+    }
+
+    /**
      * Wrapper class to read Tuple
      * @param ins ObjectInputStream
      * @return Tuple
