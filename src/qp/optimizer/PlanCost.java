@@ -164,6 +164,10 @@ public class PlanCost {
             case JoinType.INDEXJOIN:
                 joincost = Math.max(leftpages, rightpages);
                 break;
+            case JoinType.BLOCKNESTED:
+                long leftcost = leftpages + leftpages / numbuff * rightpages;
+                long rightcost = rightpages + rightpages / numbuff * leftpages;
+                return Math.min(leftcost, rightcost);
             default:
                 System.out.println("join type is not supported");
                 return 0;
