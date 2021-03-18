@@ -166,7 +166,7 @@ public class RandomInitialPlan {
             int numJMeth = JoinType.numJoinTypes();
             // TODO: Change this to support the different join types
             // int joinMeth = RandNumb.randInt(0, numJMeth - 1);
-            jn.setJoinType(4);
+            jn.setJoinType(1);
             modifyHashtable(left, jn);
             modifyHashtable(right, jn);
             bitCList.set(jnnum);
