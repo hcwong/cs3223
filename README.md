@@ -54,6 +54,7 @@ public class JoinType {
     ...
 }
 ```
+Of course, do recompile the file every time you make the change. We apologise for the inconvenience caused.
 
 ## Intermediate files
 Any query that requires a sort operation will generate many `.tblo` files in testcases.
