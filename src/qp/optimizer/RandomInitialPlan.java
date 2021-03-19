@@ -200,7 +200,6 @@ public class RandomInitialPlan {
 
     private void createDistinctOp() {
         int distinctNum = RandNumb.randInt(0, 1);
-        distinctNum = 0;
         if (distinctNum == 0) {
             createHashDistinctOp();
         } else {

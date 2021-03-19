@@ -24,7 +24,7 @@ Indexes are not built at runtime. Instead, the user has to build the indexes usi
 This class should also be run from project root. Do not run it from anywhere else.
 
 ```
-java utils.BuildIndex <tblpath> <tblname> <order> <pageSize> <numberOfBuffers> <pageSize> <numberOfBuffers> 
+java utils.BuildIndex <tblpath> <tblname> <order> <pageSize> <numberOfBuffers> 
 <keyIndex 1> <keyIndex 2>... 
 ```
 
@@ -63,8 +63,13 @@ public class JoinType {
 ```
 Of course, do recompile the file every time you make the change. We apologise for the inconvenience caused.
 
+## Changing the duplicate elimination type
+There are currently two implementations for duplicate elimination: sort-based approach and hash-based approach.
+To restrict the query to using a specified approach, replace `distinctNum` in `RandomInitialPlan#createDistinctOp()`
+with `0` for hash-based or `1` for sort-based.
+
 ## Intermediate files
-Any query that requires a sort operation will generate many `.tblo` files in testcases.
+Any query that requires a sort operation may generate many `.tblo` files in testcases.
 If it gets a bit too much, you can always just `rm` the files based on the file ending.
 
 ## Troubleshooting
