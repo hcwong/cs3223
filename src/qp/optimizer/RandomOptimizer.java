@@ -425,6 +425,7 @@ public class RandomOptimizer {
             modifySchema(base);
         } else if (node.getOpType() == OpType.HASHDISTINCT) {
             Operator base = ((HashDistinct) node).getBase();
+            modifySchema(base);
         } else if (node.getOpType() == OpType.SORTDISTINCT) {
             Operator base = ((SortDistinct) node).getBase();
             modifySchema(base);
