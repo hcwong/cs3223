@@ -6,6 +6,7 @@ import qp.utils.Tuple;
 import qp.utils.TupleReader;
 import qp.utils.TupleWriter;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.stream.Collectors;
@@ -108,6 +109,8 @@ public class HashDistinct extends Operator {
     }
 
     public boolean close() {
+        File file = new File(filename);
+        file.delete();
         return base.close();
     }
 
