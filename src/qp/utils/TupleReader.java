@@ -83,7 +83,7 @@ public class TupleReader {
                     numBatch++;
                     if (inBatch.size() > 0) break;
                 }
-            } catch (EOFException e) {
+            } catch (NullPointerException | EOFException e) {
                 // No more batch in the file
                 peekTuple = null;
                 completed = true;

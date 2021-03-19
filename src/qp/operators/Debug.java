@@ -117,6 +117,16 @@ public class Debug {
 
         } else if (optype == OpType.SCAN) {
             System.out.print(((Scan) node).getTabName());
+
+        } else if (optype == OpType.SORTDISTINCT) {
+            System.out.print("Distinct via sorting(");
+            PPrint(((SortDistinct) node).getBase());
+            System.out.print(")");
+
+        } else if (optype == OpType.HASHDISTINCT) {
+            System.out.print("Distinct via hashing(");
+            PPrint(((HashDistinct) node).getBase());
+            System.out.print(")");
         }
     }
 

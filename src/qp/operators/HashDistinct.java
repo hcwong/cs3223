@@ -17,6 +17,7 @@ public class HashDistinct extends Operator {
     Operator base;
     String filename;
     int batchSize;
+    boolean eof;
 
     public HashDistinct(Operator base, int type) {
         super(type);
@@ -31,6 +32,7 @@ public class HashDistinct extends Operator {
         if (!base.open()) {
             return false;
         }
+        eof = false;
 
         int numBuffer = BufferManager.getNumBuffer() - 1;
         ArrayList<Batch> buffers = new ArrayList<>(numBuffer);
@@ -67,7 +69,7 @@ public class HashDistinct extends Operator {
             }
             batch = base.next();
         }
-        for (int i = 0; i < batchSize; i++) {
+        for (int i = 0; i < numBuffer; i++) {
             b = buffers.get(i);
             tw = tupleWriters.get(i);
             tw.open();
@@ -80,8 +82,10 @@ public class HashDistinct extends Operator {
         Hashtable<Integer, Tuple> hashTable = new Hashtable<>();
         filename = "temp-distinct.tbl";
         tw = new TupleWriter(filename, batchSize);
+        tw.open();
         for (int i = 0; i < numBuffer; i++) {
-            TupleReader tr = new TupleReader(String.format("temp-%d.tbl", i), batchSize);
+            String fname = String.format("temp-%d.tbl", i);
+            TupleReader tr = new TupleReader(fname, batchSize);
             tr.open();
             while (!tr.isEOF()) {
                 t = tr.next();
@@ -91,12 +95,18 @@ public class HashDistinct extends Operator {
             tr.close();
             hashTable.values().forEach(tw::next);
             hashTable.clear();
+            File file = new File(fname);
+            file.delete();
         }
         tw.close();
         return true;
     }
 
     public Batch next() {
+        if (eof) {
+            return null;
+        }
+
         Batch outBatch = new Batch(batchSize);
         TupleReader tupleReader = new TupleReader(filename, batchSize);
         tupleReader.open();
@@ -104,6 +114,7 @@ public class HashDistinct extends Operator {
             Tuple t = tupleReader.next();
             outBatch.add(t);
         }
+        eof = true;
         tupleReader.close();
         return outBatch;
     }
