@@ -178,7 +178,7 @@ public class IndexNestedJoin extends Join {
 
                 // Matching tuple not found
                 if (matchingTuples.size() == 0) {
-                    ocurs++;
+                    ocurs++; // This ++ is essential else the program will enter infinite loop
                     continue;
                 }
 
@@ -186,6 +186,8 @@ public class IndexNestedJoin extends Join {
                     Tuple innerTuple = matchingTuples.get(matchingTuplesIndex);
                     matchingTuplesIndex++;
 
+                    // Note that index nested join only works on one join condition
+                    // We check the rest of the conditions here.
                     if (inner == left) {
                         if (innerTuple.checkJoin(outerTuple, innerindex, outerindex, conditionList)) {
                             outbatch.add(innerTuple.joinWith(outerTuple));
@@ -204,7 +206,6 @@ public class IndexNestedJoin extends Join {
                 }
                 matchingTuplesIndex = 0;
                 matchingTuples = null;
-                // ocurs can only be incremented here
                 ocurs++;
             }
 
@@ -248,6 +249,11 @@ public class IndexNestedJoin extends Join {
     }
 
 
+    /**
+     * If it is a non equality join condition we handle it here.
+     * @param outerTuple
+     * @return
+     */
     private ArrayList<Tuple> getMatchOnInequality(Tuple outerTuple) {
         int outerTupleIndex = outerindex.get(innerindex.indexOf(attrIndexInTreeIndex));
         List<Object> keyValues = new ArrayList<>();
@@ -404,6 +410,13 @@ public class IndexNestedJoin extends Join {
         }
     }
 
+    /**
+     * Gets the range of offsets based on the join condition and the key
+     * Note that there are 2x the number of cases because left could be inner or outer,
+     * so we have to check that case
+     * @param key
+     * @return List<Long>
+     */
     private List<Long> getOffSetRange(BPlusTreeKey key) {
         if (conditionUsedForIndexJoin.getExprType() == Condition.LESSTHAN) {
             if (inner == left) {
@@ -618,8 +631,10 @@ public class IndexNestedJoin extends Join {
             fc.force(true);
 
         } catch (FileNotFoundException fofe) {
+            System.out.println("Cannot find tbli file");
             System.exit(1);
         } catch (IOException ioe) {
+            System.out.println("IOException while find tbli file");
             System.exit(1);
         }
     }
