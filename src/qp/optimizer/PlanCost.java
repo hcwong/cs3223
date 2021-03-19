@@ -87,13 +87,10 @@ public class PlanCost {
             return getStatistics((Scan) node);
         } else if (node.getOpType() == OpType.ORDERBY) {
             return getStatistics((Orderby) node);
-<<<<<<< HEAD
-        } else if (node.getOpType() == OpType.DISTINCT) {
+        } else if (node.getOpType() == OpType.HASHDISTINCT) {
             return getStatistics((HashDistinct) node);
-=======
         } else if (node.getOpType() == OpType.SORTDISTINCT) {
             return getStatistics((SortDistinct) node);
->>>>>>> master
         }
         System.out.println("operator is not supported");
         isFeasible = false;
