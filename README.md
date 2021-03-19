@@ -1,5 +1,10 @@
 # CS3223 Project
 
+By:
+Tao Yuan
+Leben Chew
+Joshua Wong
+
 ## Running a query
 All queries (using `QueryMain`) should be run from the `/testcases/` folder, not project root.
 
@@ -26,6 +31,8 @@ This class should also be run from project root. Do not run it from anywhere els
 ```
 java utils.BuildIndex <tblpath> <tblname> <order> <pageSize> <numberOfBuffers> 
 <keyIndex 1> <keyIndex 2>... 
+
+java utils.BuildIndex testcases/CUSTOMER.tbl CUSTOMER 200 5000 500 0
 ```
 
 `<tblPath`> is just the path to the table you want to sort and `<tblname>` is just the name of the table.
@@ -73,4 +80,5 @@ Any query that requires a sort operation may generate many `.tblo` files in test
 If it gets a bit too much, you can always just `rm` the files based on the file ending.
 
 ## Troubleshooting
-If anything fails, just recompile all the files and try again.
+If anything fails, just recompile all the files and try again and rebuild all the tbl files.
+If things fail more, contact joshua.wong@u.nus.edu.
