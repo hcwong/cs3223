@@ -79,6 +79,9 @@ with `0` for hash-based or `1` for sort-based.
 Any query that requires a sort operation may generate many `.tblo` files in testcases.
 If it gets a bit too much, you can always just `rm` the files based on the file ending.
 
+## Summary on Folders to Create
+The folders you need to create are /tmp and /indexes at the project root
+
 ## Troubleshooting
 If anything fails, just recompile all the files and try again and rebuild all the tbl files.
 If things fail more, contact joshua.wong@u.nus.edu.
