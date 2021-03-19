@@ -10,6 +10,8 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.StringTokenizer;
+
+import qp.operators.HashDistinct;
 import qp.operators.Join;
 import qp.operators.JoinType;
 import qp.operators.OpType;
@@ -84,6 +86,8 @@ public class PlanCost {
             return getStatistics((Scan) node);
         } else if (node.getOpType() == OpType.ORDERBY) {
             return getStatistics((Orderby) node);
+        } else if (node.getOpType() == OpType.DISTINCT) {
+            return getStatistics((HashDistinct) node);
         }
         System.out.println("operator is not supported");
         isFeasible = false;
@@ -96,6 +100,11 @@ public class PlanCost {
      **/
     protected long getStatistics(Project node) {
         return calculateCost(node.getBase());
+    }
+
+    protected long getStatistics(HashDistinct node) {
+        //TODO
+        return 0;
     }
 
     /**

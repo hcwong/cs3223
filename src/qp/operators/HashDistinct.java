@@ -3,32 +3,38 @@ package qp.operators;
 import qp.optimizer.BufferManager;
 import qp.utils.Batch;
 import qp.utils.Tuple;
+import qp.utils.TupleReader;
 import qp.utils.TupleWriter;
 
 import java.util.ArrayList;
+import java.util.Hashtable;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class HashDistinct extends Operator {
 
     Operator base;
+    String filename;
+    int batchSize;
 
     public HashDistinct(Operator base, int type) {
         super(type);
         this.base = base;
     }
 
-    private int hash(Tuple tuple, int numBuffer) {
-        return tuple.hashCode() % numBuffer;
+    private int hash(Tuple tuple, int numBuckets) {
+        return tuple.hashCode() % numBuckets;
     }
 
     public boolean open() {
-        return base.open();
-    }
+        if (!base.open()) {
+            return false;
+        }
 
-    public Batch next() {
         int numBuffer = BufferManager.getNumBuffer() - 1;
         ArrayList<Batch> buffers = new ArrayList<>(numBuffer);
         Batch batch = base.next();
-        int batchSize = batch.capacity();
+        batchSize = batch.capacity();
         for (int i = 0; i < numBuffer; i++) {
             buffers.add(new Batch(batchSize));
         }
@@ -36,9 +42,12 @@ public class HashDistinct extends Operator {
         int j;
         Tuple t;
         Batch b;
+        TupleWriter tw;
 
-        TupleWriter tw = new TupleWriter("temp.tbl", batchSize);
-        tw.open();
+        ArrayList<TupleWriter> tupleWriters = IntStream.range(0, numBuffer)
+                .mapToObj(i -> new TupleWriter(String.format("temp-%d.tbl", i), batchSize))
+                .collect(Collectors.toCollection(ArrayList::new));
+        tupleWriters.forEach(TupleWriter::open);
         while (batch != null) {
             for (int i = 0; i < batch.size(); i++) {
                 t = batch.get(i);
@@ -48,20 +57,65 @@ public class HashDistinct extends Operator {
                     b.add(t);
                 }
                 if (b.isFull()) {
+                    tw = tupleWriters.get(j);
+                    tw.open();
                     b.getTuples().forEach(tw::next);
+                    tw.close();
                     b.clear();
                 }
             }
             batch = base.next();
         }
-        for (Batch bat : buffers) {
-            bat.getTuples().forEach(tw::next);
+        for (int i = 0; i < batchSize; i++) {
+            b = buffers.get(i);
+            tw = tupleWriters.get(i);
+            tw.open();
+            b.getTuples().forEach(tw::next);
+            tw.close();
+        }
+        tupleWriters.forEach(TupleWriter::close);
+
+        int numBuckets = (numBuffer / 2) | 1;
+        Hashtable<Integer, Tuple> hashTable = new Hashtable<>();
+        filename = "temp-distinct.tbl";
+        tw = new TupleWriter(filename, batchSize);
+        for (int i = 0; i < numBuffer; i++) {
+            TupleReader tr = new TupleReader(String.format("temp-%d.tbl", i), batchSize);
+            tr.open();
+            while (!tr.isEOF()) {
+                t = tr.next();
+                j = hash(t, numBuckets);
+                hashTable.put(j, t);
+            }
+            tr.close();
+            hashTable.values().forEach(tw::next);
+            hashTable.clear();
         }
         tw.close();
-        return null;
+        return true;
+    }
+
+    public Batch next() {
+        Batch outBatch = new Batch(batchSize);
+        TupleReader tupleReader = new TupleReader(filename, batchSize);
+        tupleReader.open();
+        while (!tupleReader.isEOF()) {
+            Tuple t = tupleReader.next();
+            outBatch.add(t);
+        }
+        tupleReader.close();
+        return outBatch;
     }
 
     public boolean close() {
         return base.close();
+    }
+
+    public Operator getBase() {
+        return base;
+    }
+
+    public void setBase(Operator base) {
+        this.base = base;
     }
 }

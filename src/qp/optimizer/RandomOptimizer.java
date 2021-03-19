@@ -82,6 +82,10 @@ public class RandomOptimizer {
             Operator base = makeExecPlan(((Orderby) node).getBase());
             ((Orderby) node).setBase(base);
             return node;
+        } else if (node.getOpType() == OpType.DISTINCT) {
+            Operator base = makeExecPlan(((HashDistinct) node).getBase());
+            ((HashDistinct) node).setBase(base);
+            return node;
         } else {
             return node;
         }
@@ -374,12 +378,14 @@ public class RandomOptimizer {
         } else if (node.getOpType() == OpType.SCAN) {
             return null;
         } else if (node.getOpType() == OpType.SELECT) {
-            // if sort/project/select/orderby operator
+            // if sort/project/select/orderby/distinct operator
             return findNodeAt(((Select) node).getBase(), joinNum);
         } else if (node.getOpType() == OpType.PROJECT) {
             return findNodeAt(((Project) node).getBase(), joinNum);
         } else if (node.getOpType() == OpType.ORDERBY) {
             return findNodeAt(((Orderby) node).getBase(), joinNum);
+        } else if (node.getOpType() == OpType.DISTINCT) {
+            return findNodeAt(((HashDistinct) node).getBase(), joinNum);
         } else {
             return null;
         }
@@ -406,6 +412,9 @@ public class RandomOptimizer {
             node.setSchema(base.getSchema().subSchema(attrlist));
         } else if (node.getOpType() == OpType.ORDERBY) {
             Operator base = ((Orderby) node).getBase();
+            modifySchema(base);
+        } else if (node.getOpType() == OpType.DISTINCT) {
+            Operator base = ((HashDistinct) node).getBase();
             modifySchema(base);
         }
     }

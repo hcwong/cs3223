@@ -65,6 +65,7 @@ public class RandomInitialPlan {
             createJoinOp();
         }
         createProjectOp();
+        createDistinctOp();
         createOrderByOp();
 
         return root;
@@ -188,6 +189,10 @@ public class RandomInitialPlan {
             Schema newSchema = base.getSchema().subSchema(projectlist);
             root.setSchema(newSchema);
         }
+    }
+
+    public void createDistinctOp() {
+        //TODO
     }
 
     public void createOrderByOp() {
