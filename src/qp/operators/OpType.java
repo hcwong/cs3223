@@ -12,5 +12,6 @@ public class OpType {
     public static final int JOIN = 3;
     public static final int ORDERBY = 4;
     public static final int SORTDISTINCT = 5;
+    public static final int HASHDISTINCT = 6;
 
 }
