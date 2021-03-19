@@ -20,6 +20,7 @@ import qp.operators.Orderby;
 import qp.operators.Project;
 import qp.operators.Scan;
 import qp.operators.Select;
+import qp.operators.SortDistinct;
 import qp.utils.Attribute;
 import qp.utils.Batch;
 import qp.utils.Condition;
@@ -86,8 +87,13 @@ public class PlanCost {
             return getStatistics((Scan) node);
         } else if (node.getOpType() == OpType.ORDERBY) {
             return getStatistics((Orderby) node);
+<<<<<<< HEAD
         } else if (node.getOpType() == OpType.DISTINCT) {
             return getStatistics((HashDistinct) node);
+=======
+        } else if (node.getOpType() == OpType.SORTDISTINCT) {
+            return getStatistics((SortDistinct) node);
+>>>>>>> master
         }
         System.out.println("operator is not supported");
         isFeasible = false;
@@ -113,6 +119,22 @@ public class PlanCost {
      * @return long
      */
     protected long getStatistics(Orderby node) {
+        long intuples = calculateCost(node.getBase());
+        if (!isFeasible) {
+            System.out.println("notFeasible");
+            return Long.MAX_VALUE;
+        }
+
+        double sortcost = Math.log(intuples) * intuples;
+        return 2 * intuples + Double.valueOf(sortcost).longValue();
+    }
+
+    /**
+     * Calculates the statistics of SortDistinct operation
+     * @param node
+     * @return long
+     */
+    protected long getStatistics(SortDistinct node) {
         long intuples = calculateCost(node.getBase());
         if (!isFeasible) {
             System.out.println("notFeasible");

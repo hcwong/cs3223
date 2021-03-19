@@ -4,6 +4,8 @@
 
 package qp.optimizer;
 
+import java.nio.Buffer;
+import java.util.Random;
 import qp.operators.*;
 import qp.utils.*;
 
@@ -47,7 +49,6 @@ public class RandomInitialPlan {
      * prepare initial plan for the query
      **/
     public Operator prepareInitialPlan() {
-
         if (sqlquery.getGroupByList().size() > 0) {
             System.err.println("GroupBy is not implemented.");
             System.exit(1);
@@ -62,6 +63,7 @@ public class RandomInitialPlan {
         createProjectOp();
         createDistinctOp();
         createOrderByOp();
+        createSortDistinctOp();
 
         return root;
     }
@@ -186,18 +188,35 @@ public class RandomInitialPlan {
         }
     }
 
-    public void createDistinctOp() {
-        //TODO
-    }
-
     public void createOrderByOp() {
         Operator base = root;
         int numBuff = BufferManager.getNumBuffer();
 
         if (sqlquery.getOrderByList().size() > 0) {
              root = new Orderby(base, sqlquery.getOrderByList(),
-                 sqlquery.getIsAsc(), OpType.ORDERBY, numBuff);
+                 sqlquery.getIsAsc(), OpType.ORDERBY);
              root.setSchema(base.getSchema());
+        }
+    }
+
+    private void createDistinctOp() {
+        int distinctNum = RandNumb.randInt(0, 1);
+        if (distinctNum == 0) {
+            // Add Hash Distinct Op here
+            createSortDistinctOp();
+        } else {
+            createSortDistinctOp();
+        }
+    }
+
+    private void createSortDistinctOp() {
+        Operator base = root;
+        int numBuff = BufferManager.getNumBuffer();
+        int buffPerJoin = BufferManager.getBuffersPerJoin();
+
+        if (sqlquery.isDistinct()) {
+            root = new SortDistinct(base, OpType.SORTDISTINCT);
+            root.setSchema(base.getSchema());
         }
     }
 
