@@ -55,7 +55,6 @@ public class PlanCost {
      * Returns the cost of the plan
      **/
     public long getCost(Operator root) {
-        cost = 0;
         isFeasible = true;
         long[] stats = calculateCost(root);
         numtuple = stats[0];
@@ -109,7 +108,7 @@ public class PlanCost {
         }
         long stats[] = calculateCost(node.getBase());
         long intuples = stats[0];
-        long numPages = intuples / Batch.getPageSize() * node.getSchema().getTupleSize();
+        long numPages = (long) (1.0 * intuples / Batch.getPageSize() * node.getSchema().getTupleSize());
         return new long[] {intuples, numPages};
     }
 
@@ -127,7 +126,7 @@ public class PlanCost {
             double collisionProb = 1 - Math.exp(- 1.0 * intuples * intuples / (2 * permutationSpace));
             outtuples = (long) (intuples * (1 - collisionProb));
         }
-        long outPages = outtuples * node.getSchema().getTupleSize() / Batch.getPageSize();
+        long outPages = (long) (1.0 * outtuples * node.getSchema().getTupleSize() / Batch.getPageSize());
         cost += numPages + 2 * outPages;
         return new long[] {outtuples, outPages};
     }
@@ -180,7 +179,7 @@ public class PlanCost {
                 / Math.log(numBuffer - 1)));
         long sortcost = 2 * numPages * numPasses;
         cost += sortcost;
-        long outPages = outtuples * node.getSchema().getTupleSize() / Batch.getPageSize();
+        long outPages = (long) (1.0 * outtuples * node.getSchema().getTupleSize() / Batch.getPageSize());
         return new long[] {outtuples, outPages};
     }
 
@@ -253,7 +252,7 @@ public class PlanCost {
         }
         cost = cost + joincost;
 
-        long numPages = outtuples / outcapacity;
+        long numPages = Math.max(1, outtuples / outcapacity);
         return new long[] {outtuples, numPages};
     }
 
@@ -301,7 +300,7 @@ public class PlanCost {
             long newvalue = (long) Math.ceil(((double) outtuples / (double) intuples) * oldvalue);
             ht.put(attri, newvalue);
         }
-        long numPages = outtuples * schema.getTupleSize() / Batch.getPageSize();
+        long numPages = (long) (1.0 * outtuples * schema.getTupleSize() / Batch.getPageSize());
         return new long[] {outtuples, numPages};
     }
 
