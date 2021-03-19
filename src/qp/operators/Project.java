@@ -49,6 +49,10 @@ public class Project extends Operator {
         return attrset;
     }
 
+    public boolean isAggregate() {
+        return isAggregate;
+    }
+
     /**
      * Projection must all be aggregation, or no aggregation. All or nothing behaviour.
      * @return if the projection is aggregation valid

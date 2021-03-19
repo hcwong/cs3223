@@ -63,7 +63,6 @@ public class RandomInitialPlan {
         createProjectOp();
         createDistinctOp();
         createOrderByOp();
-        createSortDistinctOp();
 
         return root;
     }
@@ -201,11 +200,20 @@ public class RandomInitialPlan {
 
     private void createDistinctOp() {
         int distinctNum = RandNumb.randInt(0, 1);
+        distinctNum = 1;
         if (distinctNum == 0) {
-            // Add Hash Distinct Op here
-            createSortDistinctOp();
+            createHashDistinctOp();
         } else {
             createSortDistinctOp();
+        }
+    }
+
+    private void createHashDistinctOp() {
+        Operator base = root;
+
+        if (sqlquery.isDistinct()) {
+            root = new HashDistinct(base, OpType.HASHDISTINCT);
+            root.setSchema((base.getSchema()));
         }
     }
 
