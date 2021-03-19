@@ -184,6 +184,11 @@ public class BuildIndex {
         return new BPlusTreeKey(keys);
     }
 
+    /**
+     * Serializes a tuple for addition into
+     * @param t
+     * @return
+     */
     public static byte[] serialize(Tuple t) {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();

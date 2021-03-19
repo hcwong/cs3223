@@ -60,6 +60,15 @@ public class Tuple implements Serializable {
         return true;
     }
 
+    /**
+     * The purpose of this function is to provide a more rigorous check on join conditions
+     * that includes non equality joins.
+     * @param right
+     * @param leftindex
+     * @param rightindex
+     * @param conditions
+     * @return boolean
+     */
     public boolean checkJoin(Tuple right,
                              ArrayList<Integer> leftindex,
                              ArrayList<Integer> rightindex,
@@ -72,24 +81,26 @@ public class Tuple implements Serializable {
             Object rightData = right.dataAt(rightindex.get(i));
             Condition cond = conditions.get(i);
 
+            // As long as one of the conditions is false, the checkjoin will fail and return false
+            // Think oif it like an & condition.
             switch(cond.getExprType()) {
             case Condition.LESSTHAN:
-                if (compareTuples(this, right, i, i) >= 0) {
+                if (compareTuples(this, right, leftindex.get(i), rightindex.get(i)) >= 0) {
                     return false;
                 }
                 break;
             case Condition.GREATERTHAN:
-                if (compareTuples(this, right, i, i) <= 0) {
+                if (compareTuples(this, right, leftindex.get(i), rightindex.get(i)) <= 0) {
                     return false;
                 }
                 break;
             case Condition.LTOE:
-                if (compareTuples(this, right, i, i) > 0) {
+                if (compareTuples(this, right, leftindex.get(i), rightindex.get(i)) > 0) {
                     return false;
                 }
                 break;
             case Condition.GTOE:
-                if (compareTuples(this, right, i, i) < 0) {
+                if (compareTuples(this, right, leftindex.get(i), rightindex.get(i)) < 0) {
                     return false;
                 }
                 break;
