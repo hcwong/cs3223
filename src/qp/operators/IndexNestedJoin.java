@@ -316,18 +316,15 @@ public class IndexNestedJoin extends Join {
         int rightIndex = 0;
 
         if (left == inner) {
+            leftTuple = innerTuple;
+            leftIndex = attrIndexInTreeIndex;
             rightTuple = outerTuple;
             rightIndex = outerTupleIndex;
         } else {
-            leftTuple = outerTuple;
-            leftIndex = outerTupleIndex;
-        }
-        if (left == inner) {
-            leftTuple = innerTuple;
-            leftIndex = attrIndexInTreeIndex;
-        } else {
             rightTuple = innerTuple;
             rightIndex = attrIndexInTreeIndex;
+            leftTuple = outerTuple;
+            leftIndex = outerTupleIndex;
         }
 
         // Check if it fulfills the conditions
@@ -527,10 +524,13 @@ public class IndexNestedJoin extends Join {
     /**
      * Setup the operator for an index nested join
      * We read in the index if it exists and check for a condition we can do the index nested join
+     * In doing so, we also figure out whether left or right should be the inner
+     * relation in the index nested join
      */
     private void setup() {
         List<Attribute> leftConditions = new ArrayList<>();
         List<Attribute> rightConditions = new ArrayList<>();
+        // Always join on equality conditions whereever possible!
         for (Condition cond: conditionList) {
             if (cond.getExprType() == Condition.EQUAL) {
                 leftConditions.add(cond.getLhs());
@@ -538,7 +538,7 @@ public class IndexNestedJoin extends Join {
             }
         }
 
-        // If no equality condition to sort by, use random inequality condition
+        // If no equality condition to sort by, use random non-equality condition
         if (leftConditions.isEmpty()) {
             for (Condition cond: conditionList) {
                 if (cond.getExprType() == Condition.NOTEQUAL) {
@@ -551,11 +551,14 @@ public class IndexNestedJoin extends Join {
             }
         }
 
+        // We want to check if there are any indexes for the attributes on right and left
+        // If there is an index, then we can use index hash join
         HashMap<Attribute, String> leftMap = checkAttributes(leftConditions);
         HashMap<Attribute, String> rightMap = checkAttributes(rightConditions);
         String indexPath = "";
 
         // Set the inner and outer schema in the loop
+        // Note that they have to be base tables in order for the index nested join to work
         if (!leftMap.isEmpty() && left instanceof Scan) {
             inner = left;
             outer = right;
@@ -581,6 +584,7 @@ public class IndexNestedJoin extends Join {
                 }
             }
         } else {
+            // By convention, outer = left, inner = right in the absence of index
             outer = left;
             inner = right;
         }
@@ -659,7 +663,8 @@ public class IndexNestedJoin extends Join {
     }
 
     /**
-     * Fall back to block nested join if there are no indexes
+     * Fall back to block nested join if there are no indexes,
+     * This handles the materialization.
      */
     private void materializeRf() {
         filenum++;

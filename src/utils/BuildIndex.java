@@ -184,6 +184,11 @@ public class BuildIndex {
         return new BPlusTreeKey(keys);
     }
 
+    /**
+     * Serializes a tuple for addition into the Random Access File
+     * @param t
+     * @return
+     */
     public static byte[] serialize(Tuple t) {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -197,6 +202,11 @@ public class BuildIndex {
         return null;
     }
 
+    /**
+     * Deserializes a byte array from our random access file to Tuple
+     * @param byteArray
+     * @return
+     */
     public static Tuple deserialize(byte[] byteArray) {
         try {
            ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(byteArray));
@@ -210,6 +220,12 @@ public class BuildIndex {
         return null;
     }
 
+    /**
+     * Appends a serialized tuple to the end of our random access file.
+     * @param fc
+     * @param tupleBytes
+     * @return
+     */
     public static long addTuple(FileChannel fc, byte[] tupleBytes) {
         try {
             long byteOffset = fc.size();
@@ -223,9 +239,16 @@ public class BuildIndex {
         return -1;
     }
 
+    /**
+     * Read a tuple from the Random access file at a given offset
+     * @param fc
+     * @param offset
+     * @param dataSize
+     * @return
+     */
     public static Tuple readTuple(FileChannel fc, long offset, int dataSize) {
         try {
-            // Do not read pass the size of the file
+            // Do not read past the size of the file
             if (offset >= fc.size()) {
                 return null;
             }
